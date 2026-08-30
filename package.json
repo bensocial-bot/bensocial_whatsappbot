@@ -2,15 +2,14 @@
   "name": "bensocial-whatsappbot",
   "version": "1.0.0",
   "type": "module",
-  "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
-    "@whiskeysockets/baileys": "^7.0.0",
-    "express": "^5.1.0",
-    "pino": "^9.7.0",
+    "@whiskeysockets/baileys": "6.7.24",
+    "express": "^4.21.2",
+    "pino": "^9.6.0",
     "qrcode-terminal": "^0.12.0"
   }
 }
