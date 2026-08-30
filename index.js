@@ -1,4 +1,5 @@
 import express from "express";
+
 import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState
@@ -7,6 +8,11 @@ import makeWASocket, {
 import qrcode from "qrcode-terminal";
 import pino from "pino";
 import { Boom } from "@hapi/boom";
+
+
+// ============================================================
+// CONFIG
+// ============================================================
 
 const PORT = process.env.PORT || 10000;
 
@@ -19,18 +25,39 @@ const ADMIN_NAME =
 const PAIRING_NUMBER = (process.env.PAIRING_NUMBER || "")
   .replace(/\D/g, "");
 
+
+// ============================================================
+// EXPRESS SERVER
+// ============================================================
+
 const app = express();
 
 app.get("/", (req, res) => {
   res.send(`
+    <!DOCTYPE html>
     <html>
       <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Bensocial WhatsApp Bot</title>
       </head>
-      <body style="font-family:Arial;text-align:center;padding:50px">
+
+      <body style="
+        font-family: Arial;
+        text-align: center;
+        padding: 50px;
+        background: #111;
+        color: white;
+      ">
+
         <h1>🤖 Bensocial WhatsApp Bot</h1>
-        <p>Bot is running.</p>
-        <p>Check the Render logs for the WhatsApp connection status.</p>
+
+        <p>✅ Bot server is running.</p>
+
+        <p>
+          WhatsApp connection is handled by the bot.
+        </p>
+
       </body>
     </html>
   `);
@@ -46,84 +73,98 @@ app.listen(PORT, () => {
 // ============================================================
 
 const SERVICES = [
+
   {
     id: "1",
     name: "📱 WhatsApp Number",
     price: "₦4,500",
     stock: "Available"
   },
+
   {
     id: "2",
     name: "📲 TextNow",
     price: "₦2,200",
     stock: "Available"
   },
+
   {
     id: "3",
     name: "🌐 eSIM",
     price: "₦25,000",
     stock: "Available"
   },
+
   {
     id: "4",
     name: "📘 Facebook",
     price: "₦2,300",
     stock: "Available"
   },
+
   {
     id: "5",
     name: "🐦 Twitter",
     price: "₦2,860",
     stock: "Available"
   },
+
   {
     id: "6",
     name: "🇺🇸 USA Facebook",
     price: "₦2,200",
     stock: "35"
   },
+
   {
     id: "7",
     name: "📹 2026 Video Call Tools",
     price: "₦56,000",
     stock: "7"
   },
+
   {
     id: "8",
     name: "✅ Telegram Verification",
     price: "₦10,000",
     stock: "9"
   },
+
   {
     id: "9",
     name: "🍎 Apple iCloud",
     price: "₦7,000",
     stock: "24"
   },
+
   {
     id: "10",
     name: "🇫🇷 France TikTok",
     price: "₦1,800",
     stock: "6"
   },
+
   {
     id: "11",
     name: "🔐 HMA VPN — 1 Month",
     price: "₦3,780",
     stock: "62"
   },
+
   {
     id: "12",
     name: "🔐 ExpressVPN — 1 Month",
     price: "₦3,800",
     stock: "25"
   },
+
   {
     id: "13",
     name: "📸 USA Instagram",
     price: "₦2,300",
     stock: "23"
   }
+
 ];
 
 
@@ -132,9 +173,15 @@ const SERVICES = [
 // ============================================================
 
 const PAYMENT = {
+
   bank: "OPay",
-  accountName: "TOLUWANI BENJAMIN/Bensocial",
-  accountNumber: "6550518571"
+
+  accountName:
+    "TOLUWANI BENJAMIN/Bensocial",
+
+  accountNumber:
+    "6550518571"
+
 };
 
 
@@ -142,16 +189,36 @@ const PAYMENT = {
 // WHATSAPP
 // ============================================================
 
-let reconnecting = false;
+let isStarting = false;
+
 
 async function startWhatsApp() {
 
+  if (isStarting) {
+    return;
+  }
+
+  isStarting = true;
+
   try {
 
-    const { state, saveCreds } =
-      await useMultiFileAuthState("./auth_info_baileys");
+    console.log("");
+    console.log("======================================");
+    console.log("🤖 STARTING BENSOCIAL WHATSAPP BOT");
+    console.log("======================================");
+    console.log("");
+
+
+    const {
+      state,
+      saveCreds
+    } = await useMultiFileAuthState(
+      "./auth_info_baileys"
+    );
+
 
     const sock = makeWASocket({
+
       auth: state,
 
       logger: pino({
@@ -167,6 +234,7 @@ async function startWhatsApp() {
         "Chrome",
         "1.0.0"
       ]
+
     });
 
 
@@ -191,22 +259,17 @@ async function startWhatsApp() {
         } = update;
 
 
-        // ----------------------------------------------------
-        // QR
-        // ----------------------------------------------------
+        // ====================================================
+        // QR CODE
+        // ====================================================
 
         if (qr) {
 
           console.log("");
-          console.log(
-            "======================================"
-          );
-          console.log(
-            "📱 WHATSAPP QR CODE"
-          );
-          console.log(
-            "======================================"
-          );
+          console.log("======================================");
+          console.log("📱 WHATSAPP QR CODE");
+          console.log("======================================");
+          console.log("");
 
           qrcode.generate(
             qr,
@@ -217,44 +280,50 @@ async function startWhatsApp() {
 
           console.log("");
           console.log(
-            "Scan the QR code with WhatsApp."
+            "Scan this QR code with WhatsApp."
           );
           console.log("");
+
         }
 
 
-        // ----------------------------------------------------
-        // CONNECTION OPEN
-        // ----------------------------------------------------
+        // ====================================================
+        // CONNECTED
+        // ====================================================
 
         if (connection === "open") {
 
-          reconnecting = false;
+          isStarting = false;
 
           console.log("");
-          console.log(
-            "======================================"
-          );
-          console.log(
-            "✅ WHATSAPP BOT CONNECTED"
-          );
-          console.log(
-            "======================================"
-          );
+          console.log("======================================");
+          console.log("✅ WHATSAPP BOT CONNECTED");
+          console.log("======================================");
           console.log("");
+
         }
 
 
-        // ----------------------------------------------------
+        // ====================================================
         // CONNECTION CLOSED
-        // ----------------------------------------------------
+        // ====================================================
 
         if (connection === "close") {
+
+          isStarting = false;
+
 
           const statusCode =
             new Boom(
               lastDisconnect?.error
-            )?.output?.statusCode;
+            )
+              ?.output
+              ?.statusCode;
+
+
+          const shouldReconnect =
+            statusCode !==
+            DisconnectReason.loggedOut;
 
 
           console.log("");
@@ -267,41 +336,41 @@ async function startWhatsApp() {
             statusCode
           );
 
-
-          if (
-            statusCode ===
-            DisconnectReason.loggedOut
-          ) {
-
-            console.log(
-              "⚠️ WhatsApp logged out."
-            );
-
-            console.log(
-              "Delete auth_info_baileys and redeploy."
-            );
-
-            return;
-          }
+          console.log(
+            "Reconnect:",
+            shouldReconnect
+          );
 
 
-          if (!reconnecting) {
-
-            reconnecting = true;
+          if (shouldReconnect) {
 
             console.log(
               "🔄 Reconnecting in 5 seconds..."
             );
 
+
             setTimeout(
               () => {
-                reconnecting = false;
                 startWhatsApp();
               },
               5000
             );
+
+          } else {
+
+            console.log("");
+            console.log(
+              "⚠️ WhatsApp logged out."
+            );
+
+            console.log(
+              "Delete auth_info_baileys and connect again."
+            );
+
           }
+
         }
+
       }
     );
 
@@ -312,74 +381,101 @@ async function startWhatsApp() {
 
     if (
       PAIRING_NUMBER &&
-      !sock.authState?.creds?.registered
+      !state.creds.registered
     ) {
 
       console.log("");
       console.log(
-        "======================================"
-      );
-      console.log(
-        "📱 REQUESTING WHATSAPP PAIRING CODE"
-      );
-      console.log(
-        "======================================"
+        "📱 Pairing number detected:"
       );
 
       console.log(
-        `Phone: ${PAIRING_NUMBER}`
+        PAIRING_NUMBER
+      );
+
+      console.log("");
+      console.log(
+        "⏳ Waiting before requesting pairing code..."
       );
 
 
-      try {
+      setTimeout(
+        async () => {
 
-        const code =
-          await sock.requestPairingCode(
-            PAIRING_NUMBER
-          );
+          try {
+
+            if (
+              !sock.authState?.creds?.registered
+            ) {
+
+              console.log("");
+              console.log(
+                "🔐 Requesting WhatsApp pairing code..."
+              );
 
 
-        console.log("");
-        console.log(
-          "======================================"
-        );
-        console.log(
-          "🔐 WHATSAPP PAIRING CODE"
-        );
-        console.log(
-          "======================================"
-        );
+              const code =
+                await sock.requestPairingCode(
+                  PAIRING_NUMBER
+                );
 
-        console.log(
-          code
-        );
 
-        console.log(
-          "======================================"
-        );
+              console.log("");
+              console.log(
+                "======================================"
+              );
 
-        console.log("");
-        console.log(
-          "On your WhatsApp:"
-        );
+              console.log(
+                "🔐 WHATSAPP PAIRING CODE"
+              );
 
-        console.log(
-          "Settings → Linked Devices → Link a Device → Link with phone number instead"
-        );
+              console.log(
+                "======================================"
+              );
 
-        console.log("");
-      }
+              console.log("");
 
-      catch (error) {
+              console.log(
+                code
+              );
 
-        console.log(
-          "❌ Pairing code error:"
-        );
+              console.log("");
 
-        console.log(
-          error?.message || error
-        );
-      }
+              console.log(
+                "Enter this code in WhatsApp:"
+              );
+
+              console.log(
+                "Linked Devices → Link a Device → Link with phone number instead"
+              );
+
+              console.log("");
+
+            }
+
+          } catch (error) {
+
+            console.log("");
+            console.log(
+              "❌ Pairing code error:"
+            );
+
+            console.log(
+              error?.message || error
+            );
+
+            console.log("");
+
+            console.log(
+              "You can use the QR code shown in the logs instead."
+            );
+
+          }
+
+        },
+        3000
+      );
+
     }
 
 
@@ -391,15 +487,22 @@ async function startWhatsApp() {
       "messages.upsert",
       async ({ messages }) => {
 
-        for (const message of messages) {
+        for (
+          const message of messages
+        ) {
 
           try {
 
-            if (!message.message) {
+            if (
+              !message.message
+            ) {
               continue;
             }
 
-            if (message.key.fromMe) {
+
+            if (
+              message.key.fromMe
+            ) {
               continue;
             }
 
@@ -415,10 +518,15 @@ async function startWhatsApp() {
 
             const text =
               message.message.conversation ||
-              message.message.extendedTextMessage
+
+              message.message
+                .extendedTextMessage
                 ?.text ||
-              message.message.imageMessage
+
+              message.message
+                .imageMessage
                 ?.caption ||
+
               "";
 
 
@@ -433,17 +541,24 @@ async function startWhatsApp() {
             }
 
 
-            // =================================================
+            // ==================================================
             // MENU
-            // =================================================
+            // ==================================================
 
             if (
+
               command === "hi" ||
+
               command === "hello" ||
+
               command === "hey" ||
+
               command === "menu" ||
+
               command === "start" ||
+
               command === "1"
+
             ) {
 
               await sendMenu(
@@ -452,12 +567,13 @@ async function startWhatsApp() {
               );
 
               continue;
+
             }
 
 
-            // =================================================
+            // ==================================================
             // SERVICES
-            // =================================================
+            // ==================================================
 
             const service =
               SERVICES.find(
@@ -475,16 +591,20 @@ async function startWhatsApp() {
               );
 
               continue;
+
             }
 
 
-            // =================================================
+            // ==================================================
             // ADMIN
-            // =================================================
+            // ==================================================
 
             if (
+
               command === "admin" ||
+
               command === "contact admin"
+
             ) {
 
               await sendAdmin(
@@ -493,16 +613,20 @@ async function startWhatsApp() {
               );
 
               continue;
+
             }
 
 
-            // =================================================
+            // ==================================================
             // PAYMENT
-            // =================================================
+            // ==================================================
 
             if (
+
               command === "payment" ||
+
               command === "pay"
+
             ) {
 
               await sock.sendMessage(
@@ -511,7 +635,8 @@ async function startWhatsApp() {
                   text:
 `💳 *PAYMENT DETAILS*
 
-🏦 Bank: ${PAYMENT.bank}
+🏦 Bank:
+${PAYMENT.bank}
 
 👤 Account Name:
 ${PAYMENT.accountName}
@@ -519,17 +644,20 @@ ${PAYMENT.accountName}
 💳 Account Number:
 ${PAYMENT.accountNumber}
 
-After payment, contact the admin with your payment receipt/order details.`
+After payment, contact the admin with your payment receipt/order details.
+
+Send *admin* to contact the admin.`
                 }
               );
 
               continue;
+
             }
 
 
-            // =================================================
+            // ==================================================
             // HELP
-            // =================================================
+            // ==================================================
 
             if (
               command === "help"
@@ -545,21 +673,22 @@ Send *menu* to view our services.
 
 Commands:
 
-• menu
-• 1 - 13
-• payment
-• admin
-• help`
+• *menu* - View services
+• *1 - 13* - Select service
+• *payment* - Payment details
+• *admin* - Contact admin
+• *help* - Help`
                 }
               );
 
               continue;
+
             }
 
 
-            // =================================================
+            // ==================================================
             // DEFAULT
-            // =================================================
+            // ==================================================
 
             await sock.sendMessage(
               jid,
@@ -571,22 +700,24 @@ Send *menu* to view our available services.`
               }
             );
 
-          }
-
-          catch (error) {
+          } catch (error) {
 
             console.log(
-              "❌ Message error:",
+              "❌ Message handling error:",
               error?.message || error
             );
+
           }
+
         }
+
       }
     );
 
-  }
 
-  catch (error) {
+  } catch (error) {
+
+    isStarting = false;
 
     console.log("");
     console.log(
@@ -597,15 +728,15 @@ Send *menu* to view our available services.`
       error?.message || error
     );
 
-    console.log(
-      "🔄 Restarting in 10 seconds..."
-    );
+    console.log("");
 
     setTimeout(
       startWhatsApp,
       10000
     );
+
   }
+
 }
 
 
@@ -625,6 +756,7 @@ async function sendMenu(
 
 `;
 
+
   for (
     const service of SERVICES
   ) {
@@ -635,6 +767,7 @@ async function sendMenu(
 📦 Stock: ${service.stock}
 
 `;
+
   }
 
 
@@ -643,7 +776,7 @@ async function sendMenu(
 
 💬 Send *admin* to contact the admin.
 
-❓ Send *help* for help.`;
+ℹ️ Send *help* for help.`;
 
 
   await sock.sendMessage(
@@ -652,6 +785,7 @@ async function sendMenu(
       text
     }
   );
+
 }
 
 
@@ -672,6 +806,8 @@ async function sendService(
 
 📦 *Stock:* ${service.stock}
 
+━━━━━━━━━━━━━━━━━━
+
 💳 *PAYMENT DETAILS*
 
 🏦 Bank:
@@ -683,9 +819,11 @@ ${PAYMENT.accountName}
 💳 Account Number:
 ${PAYMENT.accountNumber}
 
-After payment, send your payment receipt/order details to the admin.
+━━━━━━━━━━━━━━━━━━
 
-💬 Send *admin* to contact the admin.`;
+After payment, contact the admin with your payment receipt/order details.
+
+Send *admin* to contact the admin.`;
 
 
   await sock.sendMessage(
@@ -694,6 +832,7 @@ After payment, send your payment receipt/order details to the admin.
       text
     }
   );
+
 }
 
 
@@ -714,14 +853,21 @@ async function sendAdmin(
         text:
 `💬 *CONTACT ADMIN*
 
-${ADMIN_NAME}
+👤 ${ADMIN_NAME}
 
-The admin number has not been configured yet.`
+The admin number has not been configured yet.
+
+Please contact the Bensocial administrator.`
       }
     );
 
     return;
+
   }
+
+
+  const adminJid =
+    `${ADMIN_NUMBER}@s.whatsapp.net`;
 
 
   await sock.sendMessage(
@@ -733,20 +879,16 @@ The admin number has not been configured yet.`
 👤 ${ADMIN_NAME}
 
 📱 WhatsApp:
-https://wa.me/${ADMIN_NUMBER}
-
-You can contact the admin using the link above.`
+https://wa.me/${ADMIN_NUMBER}`
     }
   );
 
 
-  // Notify admin
+  // ==========================================================
+  // NOTIFY ADMIN
+  // ==========================================================
 
   try {
-
-    const adminJid =
-      `${ADMIN_NUMBER}@s.whatsapp.net`;
-
 
     await sock.sendMessage(
       adminJid,
@@ -764,15 +906,15 @@ ${jid.replace(
       }
     );
 
-  }
-
-  catch (error) {
+  } catch (error) {
 
     console.log(
       "⚠️ Could not notify admin:",
       error?.message || error
     );
+
   }
+
 }
 
 
@@ -781,15 +923,9 @@ ${jid.replace(
 // ============================================================
 
 console.log("");
-console.log(
-  "======================================"
-);
-console.log(
-  "🤖 BENSOCIAL WHATSAPP BOT"
-);
-console.log(
-  "======================================"
-);
+console.log("======================================");
+console.log("🤖 BENSOCIAL WHATSAPP BOT");
+console.log("======================================");
 console.log("");
 
 startWhatsApp();
