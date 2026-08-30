@@ -1,4 +1,5 @@
 import express from "express";
+
 import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
@@ -9,6 +10,11 @@ import pino from "pino";
 import { Boom } from "@hapi/boom";
 import QRCode from "qrcode";
 
+
+// ============================================================
+// CONFIGURATION
+// ============================================================
+
 const PORT = process.env.PORT || 10000;
 
 const ADMIN_NUMBER = (process.env.ADMIN_NUMBER || "")
@@ -17,22 +23,32 @@ const ADMIN_NUMBER = (process.env.ADMIN_NUMBER || "")
 const ADMIN_NAME =
   process.env.ADMIN_NAME || "Bensocial Admin";
 
-const PAIRING_NUMBER =
-  (process.env.PAIRING_NUMBER || "")
-    .replace(/\D/g, "");
+const PAIRING_NUMBER = (process.env.PAIRING_NUMBER || "")
+  .replace(/\D/g, "");
+
+
+// ============================================================
+// EXPRESS SERVER
+// ============================================================
 
 const app = express();
 
 
 // ============================================================
-// GLOBAL WHATSAPP STATUS
+// WHATSAPP STATUS
 // ============================================================
 
-let whatsappStatus = "Starting...";
+let whatsappStatus = "Starting WhatsApp...";
+
 let currentQR = null;
+
+let currentQRCodeImage = null;
+
 let currentPairingCode = null;
-let whatsappSocket = null;
-let reconnecting = false;
+
+let pairingRequested = false;
+
+let sockInstance = null;
 
 
 // ============================================================
@@ -142,10 +158,143 @@ const logger = pino({
 
 
 // ============================================================
-// WEB PAGE
+// WEBSITE
 // ============================================================
 
-app.get("/", (req, res) => {
+app.get("/", async (req, res) => {
+
+  let qrHTML = "";
+
+  if (currentQRCodeImage) {
+
+    qrHTML = `
+      <div style="
+        margin:30px auto;
+        padding:20px;
+        background:white;
+        width:max-content;
+        border-radius:15px;
+      ">
+
+        <img
+          src="${currentQRCodeImage}"
+          alt="WhatsApp QR Code"
+          style="
+            width:280px;
+            max-width:80vw;
+            display:block;
+          "
+        >
+
+      </div>
+
+      <p style="font-size:18px;">
+        📱 Open WhatsApp → Linked Devices → Link a Device
+      </p>
+
+      <p style="font-size:18px;">
+        Scan the QR code above.
+      </p>
+    `;
+
+  } else {
+
+    qrHTML = `
+      <div style="
+        margin:30px auto;
+        padding:25px;
+        background:#1c1c1c;
+        border-radius:15px;
+        max-width:500px;
+      ">
+
+        <h3>📱 QR CODE</h3>
+
+        <p>
+          QR code is not available right now.
+        </p>
+
+      </div>
+    `;
+
+  }
+
+
+  let pairingHTML = "";
+
+  if (currentPairingCode) {
+
+    pairingHTML = `
+      <div style="
+        margin:30px auto;
+        padding:25px;
+        background:#1c1c1c;
+        border-radius:15px;
+        max-width:500px;
+      ">
+
+        <h2>🔐 WhatsApp Pairing Code</h2>
+
+        <div style="
+          font-size:32px;
+          font-weight:bold;
+          letter-spacing:6px;
+          background:#000;
+          padding:20px;
+          border-radius:10px;
+          margin:20px 0;
+        ">
+          ${currentPairingCode}
+        </div>
+
+        <p>
+          On your phone:
+        </p>
+
+        <p>
+          WhatsApp → Settings → Linked Devices
+        </p>
+
+        <p>
+          → Link a Device
+        </p>
+
+        <p>
+          → Link with phone number instead
+        </p>
+
+        <p>
+          Enter the code above.
+        </p>
+
+      </div>
+    `;
+
+  } else {
+
+    pairingHTML = `
+      <div style="
+        margin:30px auto;
+        padding:20px;
+        background:#1c1c1c;
+        border-radius:15px;
+        max-width:500px;
+      ">
+
+        <h3>🔐 Pairing Code</h3>
+
+        <p>
+          ${PAIRING_NUMBER
+            ? "Waiting for WhatsApp pairing code..."
+            : "PAIRING_NUMBER is not configured."
+          }
+        </p>
+
+      </div>
+    `;
+
+  }
+
 
   res.send(`
 <!DOCTYPE html>
@@ -154,354 +303,73 @@ app.get("/", (req, res) => {
 
 <head>
 
-<meta charset="UTF-8">
+  <title>Bensocial WhatsApp Bot</title>
 
-<meta
-  name="viewport"
-  content="width=device-width, initial-scale=1.0"
->
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
 
-<title>Bensocial WhatsApp Bot</title>
-
-<style>
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  padding: 30px 20px;
-  background: #111;
-  color: white;
-  font-family: Arial, sans-serif;
-  text-align: center;
-}
-
-.container {
-  max-width: 650px;
-  margin: auto;
-}
-
-h1 {
-  font-size: 42px;
-  margin-top: 30px;
-}
-
-h2 {
-  margin-top: 35px;
-}
-
-.status {
-  font-size: 22px;
-  margin: 25px 0;
-}
-
-.card {
-  background: #1d1d1d;
-  border-radius: 18px;
-  padding: 25px;
-  margin-top: 25px;
-}
-
-.qr-box {
-  background: white;
-  padding: 15px;
-  border-radius: 15px;
-  display: inline-block;
-  margin-top: 20px;
-}
-
-.qr-box img {
-  width: 280px;
-  height: 280px;
-  display: block;
-}
-
-.pairing {
-  margin-top: 25px;
-  font-size: 18px;
-}
-
-.code {
-  font-size: 32px;
-  font-weight: bold;
-  letter-spacing: 5px;
-  background: #000;
-  padding: 15px;
-  border-radius: 10px;
-  margin-top: 15px;
-}
-
-.instructions {
-  margin-top: 25px;
-  line-height: 1.7;
-  color: #ddd;
-}
-
-.connected {
-  color: #00e676;
-}
-
-.waiting {
-  color: #ffca28;
-}
-
-.error {
-  color: #ff5252;
-}
-
-.small {
-  color: #999;
-  font-size: 14px;
-  margin-top: 25px;
-}
-
-</style>
+  <meta
+    http-equiv="refresh"
+    content="10"
+  >
 
 </head>
 
 
-<body>
-
-<div class="container">
-
-<h1>🤖 Bensocial<br>WhatsApp Bot</h1>
-
-<div
-  id="status"
-  class="status waiting"
->
-⏳ Starting WhatsApp...
-</div>
+<body style="
+  background:#111;
+  color:white;
+  font-family:Arial,sans-serif;
+  text-align:center;
+  padding:30px 15px;
+">
 
 
-<div
-  id="qrCard"
-  class="card"
-  style="display:none;"
->
+<h1 style="font-size:38px;">
+  🤖 Bensocial WhatsApp Bot
+</h1>
 
-<h2>📱 Scan WhatsApp QR Code</h2>
 
-<div class="qr-box">
+<div style="
+  margin:25px auto;
+  padding:20px;
+  max-width:500px;
+  background:#191919;
+  border-radius:15px;
+">
 
-<img
-  id="qrImage"
-  src=""
-  alt="WhatsApp QR Code"
->
-
-</div>
-
-<div class="instructions">
-
-<p>
-Open WhatsApp on your phone.
-</p>
-
-<p>
-<strong>
-Settings → Linked Devices → Link a Device
-</strong>
-</p>
-
-<p>
-Then scan this QR code.
-</p>
-
-</div>
+  <h2>
+    ${whatsappStatus}
+  </h2>
 
 </div>
 
 
-<div
-  id="pairingCard"
-  class="card"
-  style="display:none;"
->
+${pairingHTML}
 
-<h2>🔐 WhatsApp Pairing Code</h2>
 
-<p>
-If a pairing code is available, enter it in WhatsApp.
-</p>
+${qrHTML}
 
-<div
-  id="pairingCode"
-  class="code"
->
---------
-</div>
 
-<div class="instructions">
+<div style="
+  margin:30px auto;
+  max-width:500px;
+  padding:20px;
+  background:#191919;
+  border-radius:15px;
+">
 
-<p>
-WhatsApp → Settings → Linked Devices
-</p>
+  <p>
+    🌐 Bot server is running.
+  </p>
 
-<p>
-→ Link a Device
-</p>
-
-<p>
-→ Link with phone number instead
-</p>
+  <p>
+    This page automatically refreshes every 10 seconds.
+  </p>
 
 </div>
-
-</div>
-
-
-<div
-  id="connectedCard"
-  class="card"
-  style="display:none;"
->
-
-<h2>🎉 WhatsApp Connected</h2>
-
-<p>
-✅ Bensocial WhatsApp Bot is online.
-</p>
-
-<p>
-You can now use the bot normally.
-</p>
-
-</div>
-
-
-<div class="small">
-
-Bensocial WhatsApp Bot
-
-</div>
-
-</div>
-
-
-<script>
-
-async function updateStatus() {
-
-  try {
-
-    const response =
-      await fetch("/api/status");
-
-    const data =
-      await response.json();
-
-
-    const status =
-      document.getElementById("status");
-
-    const qrCard =
-      document.getElementById("qrCard");
-
-    const qrImage =
-      document.getElementById("qrImage");
-
-    const pairingCard =
-      document.getElementById("pairingCard");
-
-    const pairingCode =
-      document.getElementById("pairingCode");
-
-    const connectedCard =
-      document.getElementById("connectedCard");
-
-
-    status.className = "status";
-
-
-    // ========================================================
-    // CONNECTED
-    // ========================================================
-
-    if (data.connected) {
-
-      status.innerHTML =
-        "🟢 WhatsApp is connected";
-
-      status.classList.add("connected");
-
-      qrCard.style.display = "none";
-
-      pairingCard.style.display = "none";
-
-      connectedCard.style.display = "block";
-
-      return;
-    }
-
-
-    // ========================================================
-    // QR AVAILABLE
-    // ========================================================
-
-    if (data.qr) {
-
-      status.innerHTML =
-        "📱 Scan the QR code below";
-
-      status.classList.add("waiting");
-
-      qrCard.style.display = "block";
-
-      qrImage.src =
-        data.qr;
-
-    } else {
-
-      qrCard.style.display = "none";
-
-    }
-
-
-    // ========================================================
-    // PAIRING CODE
-    // ========================================================
-
-    if (data.pairingCode) {
-
-      pairingCard.style.display = "block";
-
-      pairingCode.innerText =
-        data.pairingCode;
-
-    } else {
-
-      pairingCard.style.display = "none";
-
-    }
-
-
-    connectedCard.style.display =
-      "none";
-
-
-  } catch (error) {
-
-    console.log(error);
-
-  }
-
-}
-
-
-// Check immediately
-updateStatus();
-
-
-// Check every 2 seconds
-setInterval(
-  updateStatus,
-  2000
-);
-
-</script>
 
 
 </body>
@@ -513,24 +381,14 @@ setInterval(
 
 
 // ============================================================
-// API STATUS
+// HEALTH CHECK
 // ============================================================
 
-app.get("/api/status", (req, res) => {
+app.get("/health", (req, res) => {
 
   res.json({
-
-    status: whatsappStatus,
-
-    connected:
-      whatsappStatus === "connected",
-
-    qr:
-      currentQR,
-
-    pairingCode:
-      currentPairingCode
-
+    status: "ok",
+    whatsapp: whatsappStatus
   });
 
 });
@@ -543,24 +401,17 @@ app.get("/api/status", (req, res) => {
 app.listen(PORT, () => {
 
   console.log("");
-
-  console.log(
-    "======================================"
-  );
-
-  console.log(
-    "🌐 BENSOCIAL WEB SERVER"
-  );
-
-  console.log(
-    "======================================"
-  );
+  console.log("======================================");
+  console.log("🌐 BENSOCIAL WEB SERVER");
+  console.log("======================================");
 
   console.log(
     `🌐 Port: ${PORT}`
   );
 
-  console.log("");
+  console.log(
+    "======================================"
+  );
 
 });
 
@@ -569,68 +420,73 @@ app.listen(PORT, () => {
 // WHATSAPP
 // ============================================================
 
+let reconnectTimer = null;
+
+let starting = false;
+
+
 async function startWhatsApp() {
+
+  if (starting) {
+    return;
+  }
+
+  starting = true;
 
   try {
 
     console.log("");
+    console.log("======================================");
+    console.log("🤖 STARTING BENSOCIAL WHATSAPP BOT");
+    console.log("======================================");
 
-    console.log(
-      "======================================"
-    );
-
-    console.log(
-      "🤖 STARTING BENSOCIAL WHATSAPP BOT"
-    );
-
-    console.log(
-      "======================================"
-    );
-
-    console.log("");
-
-
-    whatsappStatus =
-      "connecting";
+    whatsappStatus = "⏳ Starting WhatsApp...";
 
     currentQR = null;
 
+    currentQRCodeImage = null;
+
     currentPairingCode = null;
 
+    pairingRequested = false;
+
+
+    // ========================================================
+    // AUTH STATE
+    // ========================================================
 
     const {
       state,
       saveCreds
-    } =
-      await useMultiFileAuthState(
-        "./auth_info_baileys"
-      );
+    } = await useMultiFileAuthState(
+      "./auth_info_baileys"
+    );
 
 
-    const sock =
-      makeWASocket({
+    // ========================================================
+    // CREATE SOCKET
+    // ========================================================
 
-        auth: state,
+    const sock = makeWASocket({
 
-        logger,
+      auth: state,
 
-        browser:
-          Browsers.ubuntu(
-            "Chrome"
-          ),
+      logger,
 
-        markOnlineOnConnect: false,
+      browser: Browsers.ubuntu(
+        "Bensocial Bot"
+      ),
 
-        syncFullHistory: false,
+      markOnlineOnConnect: false,
 
-        generateHighQualityLinkPreview:
-          false
+      syncFullHistory: false,
 
-      });
+      generateHighQualityLinkPreview: false
+
+    });
 
 
-    whatsappSocket =
-      sock;
+    sockInstance = sock;
 
 
     // ========================================================
@@ -664,28 +520,22 @@ async function startWhatsApp() {
 
         if (qr) {
 
+          console.log("");
+          console.log("======================================");
+          console.log("📱 WHATSAPP QR CODE GENERATED");
+          console.log("======================================");
+
+          whatsappStatus =
+            "📱 WhatsApp QR code is ready";
+
+          currentQR = qr;
+
+          currentPairingCode = null;
+
+
           try {
 
-            console.log("");
-
-            console.log(
-              "======================================"
-            );
-
-            console.log(
-              "📱 WHATSAPP QR CODE GENERATED"
-            );
-
-            console.log(
-              "======================================"
-            );
-
-            console.log("");
-
-            // Convert WhatsApp QR string
-            // into an actual image
-
-            currentQR =
+            currentQRCodeImage =
               await QRCode.toDataURL(
                 qr,
                 {
@@ -694,29 +544,43 @@ async function startWhatsApp() {
                 }
               );
 
-
-            whatsappStatus =
-              "qr_ready";
-
-
             console.log(
-              "✅ QR code is ready."
+              "✅ QR code converted to web image."
             );
-
-            console.log(
-              "🌐 Open your Render URL to scan it."
-            );
-
-            console.log("");
 
           } catch (error) {
 
             console.log(
-              "❌ QR generation error:",
+              "❌ QR image error:",
               error?.message
             );
 
           }
+
+
+          console.log(
+            "Open the Render URL to see the QR."
+          );
+
+          console.log("");
+
+        }
+
+
+        // ====================================================
+        // CONNECTING
+        // ====================================================
+
+        if (
+          connection === "connecting"
+        ) {
+
+          whatsappStatus =
+            "🔄 Connecting to WhatsApp...";
+
+          console.log(
+            "🔄 Connecting to WhatsApp..."
+          );
 
         }
 
@@ -729,34 +593,23 @@ async function startWhatsApp() {
           connection === "open"
         ) {
 
-          reconnecting =
-            false;
+          starting = false;
 
           whatsappStatus =
-            "connected";
+            "✅ WhatsApp Bot Connected";
 
-          currentQR =
-            null;
+          currentQR = null;
 
-          currentPairingCode =
-            null;
+          currentQRCodeImage = null;
 
+          currentPairingCode = null;
 
-          console.log("");
-
-          console.log(
-            "======================================"
-          );
-
-          console.log(
-            "✅ WHATSAPP BOT CONNECTED"
-          );
-
-          console.log(
-            "======================================"
-          );
+          pairingRequested = true;
 
           console.log("");
+          console.log("======================================");
+          console.log("✅ WHATSAPP BOT CONNECTED");
+          console.log("======================================");
 
           console.log(
             "🤖 Bensocial is now online."
@@ -775,34 +628,18 @@ async function startWhatsApp() {
           connection === "close"
         ) {
 
+          starting = false;
+
           const statusCode =
             new Boom(
               lastDisconnect?.error
             )?.output?.statusCode;
 
 
-          whatsappStatus =
-            "disconnected";
-
-
-          currentQR =
-            null;
-
-
           console.log("");
-
-          console.log(
-            "======================================"
-          );
-
-          console.log(
-            "❌ WHATSAPP CONNECTION CLOSED"
-          );
-
-          console.log(
-            "======================================"
-          );
-
+          console.log("======================================");
+          console.log("❌ WHATSAPP CONNECTION CLOSED");
+          console.log("======================================");
 
           console.log(
             "Status code:",
@@ -813,57 +650,65 @@ async function startWhatsApp() {
           console.log(
             "Error:",
             lastDisconnect?.error?.message ||
-            lastDisconnect?.error ||
             "Unknown error"
           );
 
 
-          const shouldReconnect =
-            statusCode !==
-            DisconnectReason.loggedOut;
-
-
-          console.log(
-            "Reconnect:",
-            shouldReconnect
-          );
-
+          // ==================================================
+          // LOGGED OUT
+          // ==================================================
 
           if (
-            shouldReconnect &&
-            !reconnecting
+            statusCode ===
+            DisconnectReason.loggedOut
           ) {
 
-            reconnecting =
-              true;
-
-
-            console.log(
-              "🔄 Restarting WhatsApp in 5 seconds..."
-            );
-
-
-            setTimeout(
-              () => {
-
-                reconnecting =
-                  false;
-
-                startWhatsApp();
-
-              },
-              5000
-            );
-
-          } else {
-
             whatsappStatus =
-              "logged_out";
+              "⚠️ WhatsApp logged out — new pairing required";
 
+            currentQR = null;
+
+            currentQRCodeImage = null;
+
+            currentPairingCode = null;
+
+            console.log("");
+            console.log(
+              "⚠️ WhatsApp session was logged out."
+            );
 
             console.log(
-              "⚠️ WhatsApp session logged out."
+              "Delete auth_info_baileys and create a new session."
             );
+
+            console.log("");
+
+            return;
+
+          }
+
+
+          // ==================================================
+          // OTHER DISCONNECT
+          // ==================================================
+
+          whatsappStatus =
+            "🔄 WhatsApp disconnected — reconnecting...";
+
+
+          if (!reconnectTimer) {
+
+            reconnectTimer =
+              setTimeout(
+                () => {
+
+                  reconnectTimer = null;
+
+                  startWhatsApp();
+
+                },
+                5000
+              );
 
           }
 
@@ -871,6 +716,146 @@ async function startWhatsApp() {
 
       }
     );
+
+
+    // ========================================================
+    // PAIRING CODE
+    // ========================================================
+
+    if (
+      !state.creds.registered &&
+      PAIRING_NUMBER
+    ) {
+
+      console.log("");
+      console.log("======================================");
+      console.log("🔐 WHATSAPP PAIRING");
+      console.log("======================================");
+
+      console.log(
+        "📞 Number:",
+        PAIRING_NUMBER
+      );
+
+
+      /*
+       * Wait for the WhatsApp socket to become usable.
+       * The request is made only once.
+       */
+
+      setTimeout(
+        async () => {
+
+          if (pairingRequested) {
+            return;
+          }
+
+
+          if (
+            state.creds.registered
+          ) {
+            return;
+          }
+
+
+          try {
+
+            pairingRequested = true;
+
+            whatsappStatus =
+              "🔐 Generating WhatsApp pairing code...";
+
+
+            console.log("");
+            console.log(
+              "🔐 Requesting WhatsApp pairing code..."
+            );
+
+
+            const code =
+              await sock.requestPairingCode(
+                PAIRING_NUMBER
+              );
+
+
+            currentPairingCode = code;
+
+            currentQR = null;
+
+            currentQRCodeImage = null;
+
+            whatsappStatus =
+              "🔐 WhatsApp pairing code is ready";
+
+
+            console.log("");
+            console.log("======================================");
+            console.log("🔐 WHATSAPP PAIRING CODE");
+            console.log("======================================");
+
+            console.log("");
+
+            console.log(
+              `👉 ${code}`
+            );
+
+            console.log("");
+
+            console.log(
+              "Open the Render website to see the code."
+            );
+
+            console.log("");
+
+            console.log(
+              "WhatsApp → Settings → Linked Devices"
+            );
+
+            console.log(
+              "→ Link a Device → Link with phone number instead"
+            );
+
+            console.log("");
+
+          } catch (error) {
+
+            pairingRequested = false;
+
+            whatsappStatus =
+              "❌ Pairing code error — check Render logs";
+
+
+            console.log("");
+            console.log("======================================");
+            console.log("❌ PAIRING CODE ERROR");
+            console.log("======================================");
+
+            console.log(
+              "Message:",
+              error?.message
+            );
+
+            console.log(
+              "Name:",
+              error?.name
+            );
+
+            console.log(
+              "======================================");
+
+          }
+
+        },
+        5000
+      );
+
+    } else {
+
+      console.log(
+        "ℹ️ No pairing number configured."
+      );
+
+    }
 
 
     // ========================================================
@@ -1005,7 +990,8 @@ async function startWhatsApp() {
                   text:
 `💳 *PAYMENT DETAILS*
 
-🏦 Bank: ${PAYMENT.bank}
+🏦 Bank:
+${PAYMENT.bank}
 
 👤 Account Name:
 ${PAYMENT.accountName}
@@ -1083,23 +1069,16 @@ Send *menu* to view our available services.`
 
   } catch (error) {
 
+    starting = false;
+
     whatsappStatus =
-      "error";
+      "❌ WhatsApp startup error";
 
 
     console.log("");
-
-    console.log(
-      "======================================"
-    );
-
-    console.log(
-      "❌ WHATSAPP START ERROR"
-    );
-
-    console.log(
-      "======================================"
-    );
+    console.log("======================================");
+    console.log("❌ WHATSAPP START ERROR");
+    console.log("======================================");
 
     console.log(
       error?.message
@@ -1290,24 +1269,18 @@ ${jid.replace(
 // ============================================================
 
 console.log("");
-
-console.log(
-  "======================================"
-);
-
-console.log(
-  "🤖 BENSOCIAL WHATSAPP BOT"
-);
-
-console.log(
-  "======================================"
-);
-
-console.log("");
+console.log("======================================");
+console.log("🤖 BENSOCIAL WHATSAPP BOT");
+console.log("======================================");
 
 console.log(
   "PAIRING_NUMBER:",
   PAIRING_NUMBER || "NOT SET"
+);
+
+console.log(
+  "ADMIN_NUMBER:",
+  ADMIN_NUMBER || "NOT SET"
 );
 
 console.log("");
