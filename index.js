@@ -1,139 +1,35 @@
-const {
-  default: makeWASocket,
-  useMultiFileAuthState,
+import express from "express";
+import makeWASocket, {
   DisconnectReason,
-  makeCacheableSignalKeyStore
-} = require("@whiskeysockets/baileys");
+  useMultiFileAuthState
+} from "@whiskeysockets/baileys";
 
-const P = require("pino");
-const qrcode = require("qrcode-terminal");
-const express = require("express");
+import qrcode from "qrcode-terminal";
+import pino from "pino";
+import { Boom } from "@hapi/boom";
 
-// ============================================================
-// CONFIG
-// ============================================================
+const PORT = process.env.PORT || 10000;
 
-const PORT = process.env.PORT || 3000;
+const ADMIN_NUMBER = (process.env.ADMIN_NUMBER || "")
+  .replace(/\D/g, "");
 
-const ADMIN_WHATSAPP = (
-  process.env.ADMIN_WHATSAPP || ""
-).replace(/\D/g, "");
-
-const ADMIN_USERNAME = (
-  process.env.ADMIN_USERNAME || "silverfoxoftiktok"
-).replace("@", "");
-
-const BANK = process.env.BANK || "OPay";
-
-const ACCOUNT_NAME =
-  process.env.ACCOUNT_NAME ||
-  "TOLUWANI BENJAMIN/Bensocial";
-
-const ACCOUNT_NUMBER =
-  process.env.ACCOUNT_NUMBER ||
-  "6550518571";
-
-
-// ============================================================
-// SERVICES
-// ============================================================
-
-const SERVICES = {
-  whatsapp: {
-    name: "📱 WhatsApp Number",
-    price: "₦4,500",
-    stock: "Available"
-  },
-
-  textnow: {
-    name: "📲 TextNow",
-    price: "₦2,200",
-    stock: "Available"
-  },
-
-  esim: {
-    name: "🌐 eSIM",
-    price: "₦25,000",
-    stock: "Available"
-  },
-
-  facebook: {
-    name: "📘 Facebook",
-    price: "₦2,300",
-    stock: "Available"
-  },
-
-  twitter: {
-    name: "🐦 Twitter",
-    price: "₦2,860",
-    stock: "Available"
-  },
-
-  usa_facebook: {
-    name: "🇺🇸 USA Facebook",
-    price: "₦2,200",
-    stock: "35"
-  },
-
-  video_tools: {
-    name: "📹 2026 Video Call Tools",
-    price: "₦56,000",
-    stock: "7"
-  },
-
-  telegram_verification: {
-    name: "✅ Telegram Verification",
-    price: "₦10,000",
-    stock: "9"
-  },
-
-  apple: {
-    name: "🍎 Apple iCloud",
-    price: "₦7,000",
-    stock: "24"
-  },
-
-  france_tiktok: {
-    name: "🇫🇷 France TikTok",
-    price: "₦1,800",
-    stock: "6"
-  },
-
-  hma: {
-    name: "🔐 HMA VPN — 1 Month",
-    price: "₦3,780",
-    stock: "62"
-  },
-
-  expressvpn: {
-    name: "🔐 ExpressVPN — 1 Month",
-    price: "₦3,800",
-    stock: "25"
-  },
-
-  instagram: {
-    name: "📸 USA Instagram",
-    price: "₦2,300",
-    stock: "23"
-  }
-};
-
-
-// ============================================================
-// WEB SERVER
-// ============================================================
+const ADMIN_NAME = process.env.ADMIN_NAME || "Bensocial Admin";
 
 const app = express();
 
 app.get("/", (req, res) => {
-  res.send("✅ Bensocial WhatsApp Bot is running!");
-});
-
-app.get("/health", (req, res) => {
-  res.json({
-    status: "online",
-    bot: "Bensocial WhatsApp Bot"
-  });
+  res.send(`
+    <html>
+      <head>
+        <title>Bensocial WhatsApp Bot</title>
+      </head>
+      <body style="font-family:Arial;text-align:center;padding:50px">
+        <h1>🤖 Bensocial WhatsApp Bot</h1>
+        <p>Bot is running.</p>
+        <p>Check the Render logs for the WhatsApp pairing code or QR code.</p>
+      </body>
+    </html>
+  `);
 });
 
 app.listen(PORT, () => {
@@ -142,328 +38,123 @@ app.listen(PORT, () => {
 
 
 // ============================================================
-// ADMIN CHECK
+// SERVICES
 // ============================================================
 
-function isAdmin(message) {
-  const number = message.key.participant ||
-    message.key.remoteJid ||
-    "";
-
-  const cleanNumber = number
-    .replace("@s.whatsapp.net", "")
-    .replace("@g.us", "")
-    .replace(/\D/g, "");
-
-  return (
-    ADMIN_WHATSAPP &&
-    cleanNumber === ADMIN_WHATSAPP
-  );
-}
-
-
-// ============================================================
-// SERVICE MENU
-// ============================================================
-
-function getServiceList() {
-  let text = "🛍️ *BENSOCIAL SERVICES*\n\n";
-
-  Object.entries(SERVICES).forEach(
-    ([key, service], index) => {
-
-      text +=
-        `${index + 1}. ${service.name}\n` +
-        `💰 Price: ${service.price}\n` +
-        `📦 Stock: ${service.stock}\n` +
-        `🔑 Code: ${key}\n\n`;
-    }
-  );
-
-  text +=
-    "━━━━━━━━━━━━━━━━━━\n" +
-    "Reply with the service code to view payment details.";
-
-  return text;
-}
-
-
-// ============================================================
-// SERVICE DETAILS
-// ============================================================
-
-function getServiceDetails(key) {
-
-  const service = SERVICES[key];
-
-  if (!service) {
-    return null;
+const SERVICES = [
+  {
+    id: "1",
+    name: "📱 WhatsApp Number",
+    price: "₦4,500",
+    stock: "Available"
+  },
+  {
+    id: "2",
+    name: "📲 TextNow",
+    price: "₦2,200",
+    stock: "Available"
+  },
+  {
+    id: "3",
+    name: "🌐 eSIM",
+    price: "₦25,000",
+    stock: "Available"
+  },
+  {
+    id: "4",
+    name: "📘 Facebook",
+    price: "₦2,300",
+    stock: "Available"
+  },
+  {
+    id: "5",
+    name: "🐦 Twitter",
+    price: "₦2,860",
+    stock: "Available"
+  },
+  {
+    id: "6",
+    name: "🇺🇸 USA Facebook",
+    price: "₦2,200",
+    stock: "35"
+  },
+  {
+    id: "7",
+    name: "📹 2026 Video Call Tools",
+    price: "₦56,000",
+    stock: "7"
+  },
+  {
+    id: "8",
+    name: "✅ Telegram Verification",
+    price: "₦10,000",
+    stock: "9"
+  },
+  {
+    id: "9",
+    name: "🍎 Apple iCloud",
+    price: "₦7,000",
+    stock: "24"
+  },
+  {
+    id: "10",
+    name: "🇫🇷 France TikTok",
+    price: "₦1,800",
+    stock: "6"
+  },
+  {
+    id: "11",
+    name: "🔐 HMA VPN — 1 Month",
+    price: "₦3,780",
+    stock: "62"
+  },
+  {
+    id: "12",
+    name: "🔐 ExpressVPN — 1 Month",
+    price: "₦3,800",
+    stock: "25"
+  },
+  {
+    id: "13",
+    name: "📸 USA Instagram",
+    price: "₦2,300",
+    stock: "23"
   }
-
-  let adminContact = "";
-
-  if (ADMIN_WHATSAPP) {
-    adminContact =
-      `https://wa.me/${ADMIN_WHATSAPP}`;
-  }
-
-  return (
-    `${service.name}\n\n` +
-
-    `💰 *Price:* ${service.price}\n` +
-    `📦 *Stock:* ${service.stock}\n\n` +
-
-    `💳 *PAYMENT DETAILS*\n\n` +
-    `🏦 Bank: ${BANK}\n` +
-    `👤 Account Name: ${ACCOUNT_NAME}\n` +
-    `💳 Account Number: ${ACCOUNT_NUMBER}\n\n` +
-
-    `━━━━━━━━━━━━━━━━━━\n\n` +
-
-    `✅ After making payment, send your ` +
-    `payment receipt/order details to the admin.\n\n` +
-
-    (
-      adminContact
-        ? `👤 *Contact Admin:*\n${adminContact}\n\n`
-        : ""
-    ) +
-
-    `⚠️ Please confirm the account details ` +
-    `before making payment.`
-  );
-}
+];
 
 
 // ============================================================
-// ADMIN MENU
+// PAYMENT DETAILS
 // ============================================================
 
-function adminMenu() {
-
-  return (
-    `🔐 *BENSOCIAL ADMIN PANEL*\n\n` +
-
-    `📋 *View Services*\n` +
-    `!services\n\n` +
-
-    `➕ *Add Service*\n` +
-    `!add key | name | price | stock\n\n` +
-
-    `💰 *Change Price*\n` +
-    `!price key | new price\n\n` +
-
-    `📦 *Change Stock*\n` +
-    `!stock key | new stock\n\n` +
-
-    `🗑️ *Delete Service*\n` +
-    `!delete key\n\n` +
-
-    `💳 *Payment Details*\n` +
-    `!payment\n\n` +
-
-    `ℹ️ *Admin username:* @${ADMIN_USERNAME}`
-  );
-}
+const PAYMENT = {
+  bank: "OPay",
+  accountName: "TOLUWANI BENJAMIN/Bensocial",
+  accountNumber: "6550518571"
+};
 
 
 // ============================================================
-// ADD SERVICE
+// WHATSAPP CONNECTION
 // ============================================================
 
-function addService(text) {
+async function startWhatsApp() {
 
-  const parts = text
-    .split("|")
-    .map(x => x.trim());
-
-  if (parts.length !== 4) {
-    return (
-      `❌ Wrong format.\n\n` +
-      `Use:\n` +
-      `!add key | name | price | stock\n\n` +
-      `Example:\n` +
-      `!add netflix | 🎬 Netflix | ₦5,000 | 10`
-    );
-  }
-
-  const [key, name, price, stock] = parts;
-
-  const serviceKey = key
-    .toLowerCase()
-    .replace(/\s+/g, "_");
-
-  if (SERVICES[serviceKey]) {
-    return `❌ Service "${serviceKey}" already exists.`;
-  }
-
-  SERVICES[serviceKey] = {
-    name,
-    price,
-    stock
-  };
-
-  return (
-    `✅ *SERVICE ADDED*\n\n` +
-    `🔑 Key: ${serviceKey}\n` +
-    `📌 Name: ${name}\n` +
-    `💰 Price: ${price}\n` +
-    `📦 Stock: ${stock}`
-  );
-}
-
-
-// ============================================================
-// CHANGE PRICE
-// ============================================================
-
-function changePrice(text) {
-
-  const parts = text
-    .split("|")
-    .map(x => x.trim());
-
-  if (parts.length !== 2) {
-    return (
-      `❌ Wrong format.\n\n` +
-      `Use:\n` +
-      `!price key | new price\n\n` +
-      `Example:\n` +
-      `!price whatsapp | ₦5,000`
-    );
-  }
-
-  const [key, price] = parts;
-
-  if (!SERVICES[key]) {
-    return `❌ Service "${key}" not found.`;
-  }
-
-  SERVICES[key].price = price;
-
-  return (
-    `✅ *PRICE UPDATED*\n\n` +
-    `${SERVICES[key].name}\n` +
-    `💰 New price: ${price}`
-  );
-}
-
-
-// ============================================================
-// CHANGE STOCK
-// ============================================================
-
-function changeStock(text) {
-
-  const parts = text
-    .split("|")
-    .map(x => x.trim());
-
-  if (parts.length !== 2) {
-    return (
-      `❌ Wrong format.\n\n` +
-      `Use:\n` +
-      `!stock key | new stock\n\n` +
-      `Example:\n` +
-      `!stock whatsapp | 20`
-    );
-  }
-
-  const [key, stock] = parts;
-
-  if (!SERVICES[key]) {
-    return `❌ Service "${key}" not found.`;
-  }
-
-  SERVICES[key].stock = stock;
-
-  return (
-    `✅ *STOCK UPDATED*\n\n` +
-    `${SERVICES[key].name}\n` +
-    `📦 New stock: ${stock}`
-  );
-}
-
-
-// ============================================================
-// DELETE SERVICE
-// ============================================================
-
-function deleteService(key) {
-
-  if (!SERVICES[key]) {
-    return `❌ Service "${key}" not found.`;
-  }
-
-  const name = SERVICES[key].name;
-
-  delete SERVICES[key];
-
-  return (
-    `🗑️ *SERVICE DELETED*\n\n` +
-    `${name}`
-  );
-}
-
-
-// ============================================================
-// PAYMENT INFO
-// ============================================================
-
-function paymentInfo() {
-
-  return (
-    `💳 *CURRENT PAYMENT DETAILS*\n\n` +
-    `🏦 Bank: ${BANK}\n` +
-    `👤 Account Name: ${ACCOUNT_NAME}\n` +
-    `💳 Account Number: ${ACCOUNT_NUMBER}`
-  );
-}
-
-
-// ============================================================
-// WHATSAPP BOT
-// ============================================================
-
-async function startBot() {
-
-  const {
-    state,
-    saveCreds
-  } = await useMultiFileAuthState(
-    "./auth_info_baileys"
-  );
+  const { state, saveCreds } =
+    await useMultiFileAuthState("./auth_info_baileys");
 
   const sock = makeWASocket({
-
-    auth: {
-      creds: state.creds,
-
-      keys: makeCacheableSignalKeyStore(
-        state.keys,
-        P().child({
-          level: "silent"
-        })
-      )
-    },
-
-    logger: P({
+    auth: state,
+    logger: pino({
       level: "silent"
     }),
-
-    printQRInTerminal: false,
-
-    browser: [
-      "Bensocial Bot",
-      "Chrome",
-      "1.0.0"
-    ]
+    markOnlineOnConnect: false,
+    syncFullHistory: false
   });
 
 
-  // ========================================================
-  // CONNECTION
-  // ========================================================
+  sock.ev.on("creds.update", saveCreds);
+
 
   sock.ev.on(
     "connection.update",
@@ -476,45 +167,65 @@ async function startBot() {
       } = update;
 
 
+      // ------------------------------------------------------
+      // QR CODE
+      // ------------------------------------------------------
+
       if (qr) {
 
         console.log("");
-        console.log(
-          "📱 SCAN THIS QR CODE WITH WHATSAPP:"
-        );
+        console.log("======================================");
+        console.log("📱 WHATSAPP QR CODE");
+        console.log("======================================");
         console.log("");
 
-        qrcode.generate(
-          qr,
-          {
-            small: true
-          }
-        );
+        qrcode.generate(qr, {
+          small: true
+        });
 
+        console.log("");
+        console.log("Scan this QR code with WhatsApp.");
         console.log("");
       }
 
+
+      // ------------------------------------------------------
+      // CONNECTED
+      // ------------------------------------------------------
 
       if (connection === "open") {
 
         console.log("");
-        console.log(
-          "✅ BENSOCIAL WHATSAPP BOT CONNECTED!"
-        );
+        console.log("======================================");
+        console.log("✅ WHATSAPP BOT CONNECTED");
+        console.log("======================================");
         console.log("");
 
       }
 
 
+      // ------------------------------------------------------
+      // DISCONNECTED
+      // ------------------------------------------------------
+
       if (connection === "close") {
 
+        const statusCode =
+          new Boom(lastDisconnect?.error)
+            ?.output?.statusCode;
+
         const shouldReconnect =
-          lastDisconnect?.error?.output
-            ?.statusCode !== DisconnectReason.loggedOut;
+          statusCode !== DisconnectReason.loggedOut;
 
         console.log(
           "❌ WhatsApp connection closed."
         );
+
+        console.log(
+          "Reconnect:",
+          shouldReconnect
+        );
+
 
         if (shouldReconnect) {
 
@@ -523,22 +234,22 @@ async function startBot() {
           );
 
           setTimeout(
-            startBot,
-            5000
+            startWhatsApp,
+            3000
+          );
+
+        } else {
+
+          console.log(
+            "⚠️ WhatsApp logged out."
+          );
+
+          console.log(
+            "Delete auth_info_baileys and connect again."
           );
         }
       }
     }
-  );
-
-
-  // ========================================================
-  // SAVE LOGIN
-  // ========================================================
-
-  sock.ev.on(
-    "creds.update",
-    saveCreds
   );
 
 
@@ -550,365 +261,171 @@ async function startBot() {
     "messages.upsert",
     async ({ messages }) => {
 
-      try {
+      for (const message of messages) {
 
-        const message = messages[0];
+        if (!message.message) {
+          continue;
+        }
 
-        if (!message) return;
-
-        if (message.key.fromMe) return;
-
-        if (!message.message) return;
+        if (message.key.fromMe) {
+          continue;
+        }
 
 
-        const jid =
-          message.key.remoteJid;
-
-        if (!jid) return;
+        const jid = message.key.remoteJid;
 
 
         const text =
           message.message.conversation ||
           message.message.extendedTextMessage
             ?.text ||
+          message.message.imageMessage
+            ?.caption ||
           "";
 
 
-        const input =
-          text.trim();
+        const command =
+          text
+            .trim()
+            .toLowerCase();
 
-        const lower =
-          input.toLowerCase();
+
+        if (!command) {
+          continue;
+        }
 
 
-        // ==================================================
-        // START
-        // ==================================================
+        // ====================================================
+        // START / MENU
+        // ====================================================
 
         if (
-          lower === "hi" ||
-          lower === "hello" ||
-          lower === "hey" ||
-          lower === "start" ||
-          lower === "/start"
+          command === "hi" ||
+          command === "hello" ||
+          command === "hey" ||
+          command === "menu" ||
+          command === "start" ||
+          command === "1"
+        ) {
+
+          await sendMenu(sock, jid);
+
+          continue;
+        }
+
+
+        // ====================================================
+        // SERVICES
+        // ====================================================
+
+        const service =
+          SERVICES.find(
+            item =>
+              item.id === command
+          );
+
+
+        if (service) {
+
+          await sendService(
+            sock,
+            jid,
+            service
+          );
+
+          continue;
+        }
+
+
+        // ====================================================
+        // ADMIN
+        // ====================================================
+
+        if (
+          command === "admin" ||
+          command === "contact admin"
+        ) {
+
+          await sendAdmin(
+            sock,
+            jid
+          );
+
+          continue;
+        }
+
+
+        // ====================================================
+        // PAYMENT
+        // ====================================================
+
+        if (
+          command === "payment" ||
+          command === "pay"
         ) {
 
           await sock.sendMessage(
             jid,
             {
               text:
-                `👋 *WELCOME TO BENSOCIAL!*\n\n` +
-                `🛍️ Choose a service below.\n\n` +
-                getServiceList()
+`💳 PAYMENT DETAILS
+
+🏦 Bank: ${PAYMENT.bank}
+
+👤 Account Name:
+${PAYMENT.accountName}
+
+💳 Account Number:
+${PAYMENT.accountNumber}
+
+After payment, contact the admin with your payment receipt/order details.`
             }
           );
 
-          return;
+          continue;
         }
 
 
-        // ==================================================
-        // MENU
-        // ==================================================
+        // ====================================================
+        // HELP
+        // ====================================================
 
         if (
-          lower === "menu" ||
-          lower === "services" ||
-          lower === "/services"
+          command === "help"
         ) {
 
           await sock.sendMessage(
             jid,
             {
-              text: getServiceList()
+              text:
+`🤖 BENSOCIAL BOT
+
+Send "menu" to view our services.
+
+You can also send:
+• 1 - 13 to select a service
+• payment - Payment details
+• admin - Contact admin`
             }
           );
 
-          return;
+          continue;
         }
 
 
-        // ==================================================
-        // ADMIN
-        // ==================================================
-
-        if (
-          lower === "admin" ||
-          lower === "/admin"
-        ) {
-
-          if (!isAdmin(message)) {
-
-            await sock.sendMessage(
-              jid,
-              {
-                text:
-                  "⛔ Admin access only."
-              }
-            );
-
-            return;
-          }
-
-          await sock.sendMessage(
-            jid,
-            {
-              text: adminMenu()
-            }
-          );
-
-          return;
-        }
-
-
-        // ==================================================
-        // ADMIN SERVICES
-        // ==================================================
-
-        if (
-          lower === "!services"
-        ) {
-
-          if (!isAdmin(message)) {
-
-            await sock.sendMessage(
-              jid,
-              {
-                text:
-                  "⛔ Admin access only."
-              }
-            );
-
-            return;
-          }
-
-          await sock.sendMessage(
-            jid,
-            {
-              text: getServiceList()
-            }
-          );
-
-          return;
-        }
-
-
-        // ==================================================
-        // ADD
-        // ==================================================
-
-        if (
-          lower.startsWith("!add ")
-        ) {
-
-          if (!isAdmin(message)) {
-
-            await sock.sendMessage(
-              jid,
-              {
-                text:
-                  "⛔ Admin access only."
-              }
-            );
-
-            return;
-          }
-
-          const data =
-            input.substring(5).trim();
-
-          await sock.sendMessage(
-            jid,
-            {
-              text: addService(data)
-            }
-          );
-
-          return;
-        }
-
-
-        // ==================================================
-        // PRICE
-        // ==================================================
-
-        if (
-          lower.startsWith("!price ")
-        ) {
-
-          if (!isAdmin(message)) {
-
-            await sock.sendMessage(
-              jid,
-              {
-                text:
-                  "⛔ Admin access only."
-              }
-            );
-
-            return;
-          }
-
-          const data =
-            input.substring(7).trim();
-
-          await sock.sendMessage(
-            jid,
-            {
-              text: changePrice(data)
-            }
-          );
-
-          return;
-        }
-
-
-        // ==================================================
-        // STOCK
-        // ==================================================
-
-        if (
-          lower.startsWith("!stock ")
-        ) {
-
-          if (!isAdmin(message)) {
-
-            await sock.sendMessage(
-              jid,
-              {
-                text:
-                  "⛔ Admin access only."
-              }
-            );
-
-            return;
-          }
-
-          const data =
-            input.substring(7).trim();
-
-          await sock.sendMessage(
-            jid,
-            {
-              text: changeStock(data)
-            }
-          );
-
-          return;
-        }
-
-
-        // ==================================================
-        // DELETE
-        // ==================================================
-
-        if (
-          lower.startsWith("!delete ")
-        ) {
-
-          if (!isAdmin(message)) {
-
-            await sock.sendMessage(
-              jid,
-              {
-                text:
-                  "⛔ Admin access only."
-              }
-            );
-
-            return;
-          }
-
-          const key =
-            input.substring(8)
-              .trim()
-              .toLowerCase();
-
-          await sock.sendMessage(
-            jid,
-            {
-              text: deleteService(key)
-            }
-          );
-
-          return;
-        }
-
-
-        // ==================================================
-        // PAYMENT
-        // ==================================================
-
-        if (
-          lower === "!payment"
-        ) {
-
-          if (!isAdmin(message)) {
-
-            await sock.sendMessage(
-              jid,
-              {
-                text:
-                  "⛔ Admin access only."
-              }
-            );
-
-            return;
-          }
-
-          await sock.sendMessage(
-            jid,
-            {
-              text: paymentInfo()
-            }
-          );
-
-          return;
-        }
-
-
-        // ==================================================
-        // SERVICE CODE
-        // ==================================================
-
-        if (
-          SERVICES[lower]
-        ) {
-
-          const details =
-            getServiceDetails(lower);
-
-          await sock.sendMessage(
-            jid,
-            {
-              text: details
-            }
-          );
-
-          return;
-        }
-
-
-        // ==================================================
+        // ====================================================
         // DEFAULT
-        // ==================================================
+        // ====================================================
 
         await sock.sendMessage(
           jid,
           {
             text:
-              `❓ I didn't understand that.\n\n` +
-              `Send *menu* to see all available services.`
+`👋 Welcome to Bensocial!
+
+Send *menu* to view our available services.`
           }
         );
-
-      } catch (error) {
-
-        console.error(
-          "Message error:",
-          error
-        );
-
       }
     }
   );
@@ -916,14 +433,165 @@ async function startBot() {
 
 
 // ============================================================
+// MENU
+// ============================================================
+
+async function sendMenu(sock, jid) {
+
+  let text =
+`👋 *WELCOME TO BENSOCIAL*
+
+🛍️ Choose a service:
+
+`;
+
+  for (const service of SERVICES) {
+
+    text +=
+`${service.id}. ${service.name}
+💰 ${service.price}
+📦 Stock: ${service.stock}
+
+`;
+  }
+
+
+  text +=
+`💳 Send *payment* for payment details.
+
+💬 Send *admin* to contact the admin.`;
+
+
+  await sock.sendMessage(
+    jid,
+    {
+      text
+    }
+  );
+}
+
+
+// ============================================================
+// SERVICE DETAILS
+// ============================================================
+
+async function sendService(
+  sock,
+  jid,
+  service
+) {
+
+  const text =
+`${service.name}
+
+💰 Price: ${service.price}
+📦 Stock: ${service.stock}
+
+💳 PAYMENT DETAILS
+
+🏦 Bank: ${PAYMENT.bank}
+
+👤 Account Name:
+${PAYMENT.accountName}
+
+💳 Account Number:
+${PAYMENT.accountNumber}
+
+After payment, contact the admin with your payment receipt/order details.
+
+Send *admin* to contact the admin.`;
+
+
+  await sock.sendMessage(
+    jid,
+    {
+      text
+    }
+  );
+}
+
+
+// ============================================================
+// CONTACT ADMIN
+// ============================================================
+
+async function sendAdmin(
+  sock,
+  jid
+) {
+
+  if (!ADMIN_NUMBER) {
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+`💬 Contact Admin
+
+Please contact Bensocial Admin.
+
+ADMIN_NUMBER has not been configured yet.`
+      }
+    );
+
+    return;
+  }
+
+
+  const adminJid =
+    `${ADMIN_NUMBER}@s.whatsapp.net`;
+
+
+  await sock.sendMessage(
+    jid,
+    {
+      text:
+`💬 *CONTACT ADMIN*
+
+👤 ${ADMIN_NAME}
+
+You can contact the admin here:
+
+https://wa.me/${ADMIN_NUMBER}`
+    }
+  );
+
+
+  // Optional notification to admin
+
+  try {
+
+    await sock.sendMessage(
+      adminJid,
+      {
+        text:
+`🔔 NEW CUSTOMER
+
+A customer has requested to contact the admin.
+
+Customer:
+${jid.replace("@s.whatsapp.net", "")}`
+      }
+    );
+
+  } catch (error) {
+
+    console.log(
+      "Could not notify admin:",
+      error.message
+    );
+  }
+}
+
+
+// ============================================================
 // START
 // ============================================================
 
-startBot().catch(
-  error => {
-    console.error(
-      "❌ Bot failed to start:",
-      error
-    );
-  }
-);
+console.log("");
+console.log("======================================");
+console.log("🤖 BENSOCIAL WHATSAPP BOT");
+console.log("======================================");
+console.log("");
+
+startWhatsApp();
