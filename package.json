@@ -1,14 +1,16 @@
 {
   "name": "bensocial-whatsapp-bot",
   "version": "1.0.0",
+  "description": "Bensocial WhatsApp Bot",
   "type": "module",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
-    "@whiskeysockets/baileys": "7.0.0-rc14",
+    "@whiskeysockets/baileys": "6.7.24",
     "express": "^5.1.0",
-    "pino": "^9.7.0"
+    "pino": "^9.7.0",
+    "qrcode": "^1.5.4"
   }
 }
