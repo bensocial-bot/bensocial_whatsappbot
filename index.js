@@ -4,7 +4,6 @@ import makeWASocket, {
   useMultiFileAuthState,
   Browsers
 } from "@whiskeysockets/baileys";
-
 import pino from "pino";
 import { Boom } from "@hapi/boom";
 
@@ -22,138 +21,52 @@ const PAIRING_NUMBER =
 
 
 // ============================================================
-// EXPRESS SERVER
+// WEB SERVER
 // ============================================================
 
 const app = express();
-
-app.use(express.json());
-
-let whatsappStatus = "Starting...";
-let lastMessage = "None";
-let lastMessageTime = "None";
 
 app.get("/", (req, res) => {
   res.send(`
 <!DOCTYPE html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bensocial WhatsApp Bot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bensocial WhatsApp Bot</title>
+</head>
 
-<style>
-body {
+<body style="
   background:#111;
   color:white;
   font-family:Arial,sans-serif;
   text-align:center;
-  padding:40px 20px;
-}
+  padding:50px 20px;
+">
 
-.box {
-  max-width:600px;
-  margin:auto;
-  background:#1c1c1c;
-  padding:30px;
-  border-radius:20px;
-}
+  <h1>🤖 Bensocial WhatsApp Bot</h1>
 
-h1 {
-  font-size:35px;
-}
+  <h2>🟢 Server is running</h2>
 
-.status {
-  font-size:24px;
-  margin:25px 0;
-}
+  <p>
+    WhatsApp bot is running in the background.
+  </p>
 
-.info {
-  background:#292929;
-  padding:15px;
-  border-radius:12px;
-  margin-top:15px;
-  text-align:left;
-}
-
-.green {
-  color:#00ff88;
-}
-
-.yellow {
-  color:#ffd000;
-}
-
-.red {
-  color:#ff4444;
-}
-</style>
-
-</head>
-
-<body>
-
-<div class="box">
-
-<h1>🤖 Bensocial WhatsApp Bot</h1>
-
-<div class="status">
-${whatsappStatus}
-</div>
-
-<div class="info">
-<b>Last message:</b><br>
-${escapeHtml(lastMessage)}
-</div>
-
-<div class="info">
-<b>Time:</b><br>
-${lastMessageTime}
-</div>
-
-<br>
-
-<p>
-Send <b>hi</b> or <b>menu</b> to the WhatsApp bot.
-</p>
-
-</div>
+  <p>
+    Send <b>ping</b> to the bot to test it.
+  </p>
 
 </body>
 </html>
 `);
 });
 
-app.get("/status", (req, res) => {
-  res.json({
-    status: whatsappStatus,
-    lastMessage,
-    lastMessageTime
-  });
-});
-
 app.listen(PORT, () => {
-  console.log("");
   console.log("======================================");
   console.log("🌐 BENSOCIAL WEB SERVER");
   console.log("======================================");
-  console.log("🌐 Port:", PORT);
+  console.log("Port:", PORT);
   console.log("");
 });
-
-
-// ============================================================
-// ESCAPE HTML
-// ============================================================
-
-function escapeHtml(text) {
-
-  return String(text || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
 
 
 // ============================================================
@@ -261,15 +174,9 @@ let SERVICES = [
 // ============================================================
 
 const PAYMENT = {
-
   bank: "OPay",
-
-  accountName:
-    "TOLUWANI BENJAMIN/Bensocial",
-
-  accountNumber:
-    "6550518571"
-
+  accountName: "TOLUWANI BENJAMIN/Bensocial",
+  accountNumber: "6550518571"
 };
 
 
@@ -283,113 +190,91 @@ const logger = pino({
 
 
 // ============================================================
-// BOT VARIABLES
+// SOCKET
 // ============================================================
 
 let sock = null;
-
-let reconnecting = false;
+let reconnectTimer = null;
 
 
 // ============================================================
-// GET MESSAGE TEXT
+// MESSAGE TEXT EXTRACTOR
 // ============================================================
 
-function getMessageText(message) {
+function getText(message) {
 
   if (!message) {
     return "";
   }
 
-
-  // Normal text
   if (message.conversation) {
     return message.conversation;
   }
 
-
-  // Extended text
-  if (
-    message.extendedTextMessage?.text
-  ) {
-
+  if (message.extendedTextMessage?.text) {
     return message.extendedTextMessage.text;
-
   }
 
-
-  // Image caption
-  if (
-    message.imageMessage?.caption
-  ) {
-
+  if (message.imageMessage?.caption) {
     return message.imageMessage.caption;
-
   }
 
-
-  // Video caption
-  if (
-    message.videoMessage?.caption
-  ) {
-
+  if (message.videoMessage?.caption) {
     return message.videoMessage.caption;
-
   }
 
-
-  // Document caption
-  if (
-    message.documentWithCaptionMessage?.message?.documentMessage?.caption
-  ) {
-
-    return message
-      .documentWithCaptionMessage
-      .message
-      .documentMessage
-      .caption;
-
+  if (message.documentMessage?.caption) {
+    return message.documentMessage.caption;
   }
 
-
-  // Ephemeral messages
-  if (
-    message.ephemeralMessage?.message
-  ) {
-
-    return getMessageText(
+  if (message.ephemeralMessage?.message) {
+    return getText(
       message.ephemeralMessage.message
     );
-
   }
 
-
-  // View once messages
-  if (
-    message.viewOnceMessage?.message
-  ) {
-
-    return getMessageText(
+  if (message.viewOnceMessage?.message) {
+    return getText(
       message.viewOnceMessage.message
     );
-
   }
 
-
-  // View once V2
-  if (
-    message.viewOnceMessageV2?.message
-  ) {
-
-    return getMessageText(
+  if (message.viewOnceMessageV2?.message) {
+    return getText(
       message.viewOnceMessageV2.message
     );
-
   }
 
-
   return "";
+}
 
+
+// ============================================================
+// SEND MESSAGE
+// ============================================================
+
+async function sendMessage(jid, text) {
+
+  try {
+
+    if (!sock) {
+      console.log("❌ Socket is not available.");
+      return;
+    }
+
+    await sock.sendMessage(jid, {
+      text
+    });
+
+    console.log("📤 REPLY SENT");
+    console.log("To:", jid);
+
+  } catch (error) {
+
+    console.log("❌ SEND MESSAGE ERROR:");
+    console.log(error?.message || error);
+
+  }
 }
 
 
@@ -403,10 +288,9 @@ async function startWhatsApp() {
 
     console.log("");
     console.log("======================================");
-    console.log("🤖 STARTING BENSOCIAL WHATSAPP BOT");
+    console.log("🤖 STARTING WHATSAPP");
     console.log("======================================");
     console.log("");
-
 
     const {
       state,
@@ -414,7 +298,6 @@ async function startWhatsApp() {
     } = await useMultiFileAuthState(
       "./auth_info_baileys"
     );
-
 
     sock = makeWASocket({
 
@@ -432,20 +315,17 @@ async function startWhatsApp() {
       generateHighQualityLinkPreview:
         false,
 
-      connectTimeoutMs:
-        60_000,
+      connectTimeoutMs: 60000,
 
-      defaultQueryTimeoutMs:
-        60_000,
+      defaultQueryTimeoutMs: 60000,
 
-      keepAliveIntervalMs:
-        25_000
+      keepAliveIntervalMs: 25000
 
     });
 
 
     // ========================================================
-    // SAVE CREDENTIALS
+    // SAVE LOGIN
     // ========================================================
 
     sock.ev.on(
@@ -455,7 +335,7 @@ async function startWhatsApp() {
 
 
     // ========================================================
-    // CONNECTION UPDATE
+    // CONNECTION
     // ========================================================
 
     sock.ev.on(
@@ -475,23 +355,15 @@ async function startWhatsApp() {
 
         if (qr) {
 
-          whatsappStatus =
-            "📱 QR CODE AVAILABLE";
-
           console.log("");
-          console.log(
-            "======================================"
-          );
-
-          console.log(
-            "📱 WHATSAPP QR CODE GENERATED"
-          );
-
-          console.log(
-            "======================================"
-          );
-
+          console.log("======================================");
+          console.log("📱 QR CODE GENERATED");
+          console.log("======================================");
           console.log("");
+
+          console.log(
+            "A WhatsApp QR code is available."
+          );
 
           console.log(
             "Use WhatsApp → Linked Devices → Link a Device."
@@ -510,9 +382,6 @@ async function startWhatsApp() {
           connection === "connecting"
         ) {
 
-          whatsappStatus =
-            "🟡 WhatsApp connecting...";
-
           console.log(
             "🟡 WhatsApp connecting..."
           );
@@ -521,31 +390,17 @@ async function startWhatsApp() {
 
 
         // ----------------------------------------------------
-        // OPEN
+        // CONNECTED
         // ----------------------------------------------------
 
         if (
           connection === "open"
         ) {
 
-          reconnecting = false;
-
-          whatsappStatus =
-            "🟢 WhatsApp CONNECTED";
-
           console.log("");
-          console.log(
-            "======================================"
-          );
-
-          console.log(
-            "✅ WHATSAPP BOT CONNECTED"
-          );
-
-          console.log(
-            "======================================"
-          );
-
+          console.log("======================================");
+          console.log("✅ WHATSAPP BOT CONNECTED");
+          console.log("======================================");
           console.log("");
 
           console.log(
@@ -558,40 +413,27 @@ async function startWhatsApp() {
 
 
         // ----------------------------------------------------
-        // CLOSED
+        // DISCONNECTED
         // ----------------------------------------------------
 
         if (
           connection === "close"
         ) {
 
-          whatsappStatus =
-            "🔴 WhatsApp disconnected";
-
           const statusCode =
             new Boom(
               lastDisconnect?.error
             )?.output?.statusCode;
 
-
           console.log("");
-          console.log(
-            "======================================"
-          );
+          console.log("======================================");
+          console.log("❌ WHATSAPP DISCONNECTED");
+          console.log("======================================");
 
           console.log(
-            "❌ WHATSAPP CONNECTION CLOSED"
-          );
-
-          console.log(
-            "======================================"
-          );
-
-          console.log(
-            "Status code:",
+            "Status:",
             statusCode
           );
-
 
           console.log(
             "Error:",
@@ -605,33 +447,34 @@ async function startWhatsApp() {
             DisconnectReason.loggedOut;
 
 
-          console.log(
-            "Reconnect:",
-            shouldReconnect
-          );
-
-
-          if (
-            shouldReconnect &&
-            !reconnecting
-          ) {
-
-            reconnecting = true;
+          if (shouldReconnect) {
 
             console.log(
               "🔄 Reconnecting in 5 seconds..."
             );
 
 
-            setTimeout(
-              async () => {
+            if (!reconnectTimer) {
 
-                reconnecting = false;
+              reconnectTimer =
+                setTimeout(
+                  async () => {
 
-                await startWhatsApp();
+                    reconnectTimer =
+                      null;
 
-              },
-              5000
+                    await startWhatsApp();
+
+                  },
+                  5000
+                );
+
+            }
+
+          } else {
+
+            console.log(
+              "⚠️ WhatsApp session logged out."
             );
 
           }
@@ -652,33 +495,17 @@ async function startWhatsApp() {
     ) {
 
       console.log("");
-      console.log(
-        "======================================"
-      );
-
-      console.log(
-        "📱 WHATSAPP PAIRING"
-      );
-
-      console.log(
-        "======================================"
-      );
+      console.log("======================================");
+      console.log("📱 REQUESTING PAIRING CODE");
+      console.log("======================================");
+      console.log("");
 
       console.log(
         "Number:",
         PAIRING_NUMBER
       );
 
-      console.log("");
-
-
       try {
-
-        /*
-         * Give the socket time to establish
-         * its connection before requesting
-         * the pairing code.
-         */
 
         await new Promise(
           resolve =>
@@ -696,22 +523,12 @@ async function startWhatsApp() {
 
 
         console.log("");
-        console.log(
-          "======================================"
-        );
-
-        console.log(
-          "🔐 WHATSAPP PAIRING CODE"
-        );
-
-        console.log(
-          "======================================"
-        );
-
+        console.log("======================================");
+        console.log("🔐 WHATSAPP PAIRING CODE");
+        console.log("======================================");
         console.log("");
 
         console.log(
-          "👉",
           code
         );
 
@@ -730,15 +547,10 @@ async function startWhatsApp() {
       } catch (error) {
 
         console.log("");
+        console.log("❌ PAIRING ERROR");
         console.log(
-          "❌ PAIRING CODE ERROR"
+          error?.message || error
         );
-
-        console.log(
-          error?.message ||
-          error
-        );
-
         console.log("");
 
       }
@@ -755,9 +567,9 @@ async function startWhatsApp() {
       async (event) => {
 
         console.log("");
-        console.log(
-          "📩 MESSAGES UPSERT EVENT"
-        );
+        console.log("======================================");
+        console.log("📩 MESSAGE EVENT RECEIVED");
+        console.log("======================================");
 
         console.log(
           "Type:",
@@ -765,18 +577,18 @@ async function startWhatsApp() {
         );
 
         console.log(
-          "Messages:",
+          "Number of messages:",
           event?.messages?.length || 0
         );
 
 
-        // Only process new notifications
+        // Only new messages
         if (
           event?.type !== "notify"
         ) {
 
           console.log(
-            "⏭️ Ignoring non-notify event."
+            "⏭️ Not a new-message event."
           );
 
           return;
@@ -792,7 +604,7 @@ async function startWhatsApp() {
           try {
 
             // ------------------------------------------------
-            // NO MESSAGE
+            // IGNORE EMPTY MESSAGE
             // ------------------------------------------------
 
             if (
@@ -800,7 +612,7 @@ async function startWhatsApp() {
             ) {
 
               console.log(
-                "⏭️ Message has no content."
+                "⏭️ Empty message."
               );
 
               continue;
@@ -809,7 +621,7 @@ async function startWhatsApp() {
 
 
             // ------------------------------------------------
-            // OWN MESSAGE
+            // IGNORE OWN MESSAGE
             // ------------------------------------------------
 
             if (
@@ -817,7 +629,7 @@ async function startWhatsApp() {
             ) {
 
               console.log(
-                "⏭️ Ignoring bot's own message."
+                "⏭️ Message sent by bot itself."
               );
 
               continue;
@@ -826,7 +638,7 @@ async function startWhatsApp() {
 
 
             // ------------------------------------------------
-            // JID
+            // GET JID
             // ------------------------------------------------
 
             const jid =
@@ -836,7 +648,7 @@ async function startWhatsApp() {
             if (!jid) {
 
               console.log(
-                "❌ No remote JID."
+                "❌ No sender JID."
               );
 
               continue;
@@ -845,37 +657,23 @@ async function startWhatsApp() {
 
 
             // ------------------------------------------------
-            // TEXT
+            // GET TEXT
             // ------------------------------------------------
 
             const text =
-              getMessageText(
+              getText(
                 message.message
               );
 
 
             console.log("");
-            console.log(
-              "======================================"
-            );
-
-            console.log(
-              "📩 MESSAGE RECEIVED"
-            );
-
-            console.log(
-              "From:",
-              jid
-            );
-
+            console.log("📩 INCOMING MESSAGE");
+            console.log("From:", jid);
             console.log(
               "Text:",
               text || "[NO TEXT]"
             );
-
-            console.log(
-              "======================================"
-            );
+            console.log("");
 
 
             if (!text) {
@@ -884,19 +682,6 @@ async function startWhatsApp() {
 
             }
 
-
-            lastMessage =
-              text;
-
-            lastMessageTime =
-              new Date().toLocaleString(
-                "en-NG"
-              );
-
-
-            // ------------------------------------------------
-            // NORMALIZE COMMAND
-            // ------------------------------------------------
 
             const command =
               text
@@ -909,10 +694,9 @@ async function startWhatsApp() {
             // =================================================
 
             const senderNumber =
-              String(jid)
+              jid
                 .split("@")[0]
                 .replace(/\D/g, "");
-
 
             const isAdmin =
               ADMIN_NUMBER &&
@@ -928,9 +712,11 @@ async function startWhatsApp() {
               command === "ping"
             ) {
 
-              await sendText(
+              await sendMessage(
                 jid,
-                "🏓 *PONG!*\n\n✅ Bensocial bot is responding."
+                `🏓 *PONG!*
+
+✅ Bensocial bot is working.`
               );
 
               continue;
@@ -939,21 +725,18 @@ async function startWhatsApp() {
 
 
             // =================================================
-            // HI / HELLO / MENU
+            // MENU
             // =================================================
 
             if (
-              [
-                "hi",
-                "hello",
-                "hey",
-                "menu",
-                "start"
-              ].includes(command)
+              command === "hi" ||
+              command === "hello" ||
+              command === "hey" ||
+              command === "menu" ||
+              command === "start"
             ) {
 
               await sendMenu(
-                sock,
                 jid
               );
 
@@ -963,7 +746,7 @@ async function startWhatsApp() {
 
 
             // =================================================
-            // SERVICES 1-13
+            // SERVICE NUMBER
             // =================================================
 
             const service =
@@ -977,7 +760,6 @@ async function startWhatsApp() {
             if (service) {
 
               await sendService(
-                sock,
                 jid,
                 service
               );
@@ -992,15 +774,12 @@ async function startWhatsApp() {
             // =================================================
 
             if (
-              [
-                "payment",
-                "pay",
-                "account"
-              ].includes(command)
+              command === "payment" ||
+              command === "pay" ||
+              command === "account"
             ) {
 
               await sendPayment(
-                sock,
                 jid
               );
 
@@ -1010,19 +789,15 @@ async function startWhatsApp() {
 
 
             // =================================================
-            // ADMIN CONTACT
+            // ADMIN
             // =================================================
 
             if (
-              [
-                "admin",
-                "contact admin",
-                "adminhelp"
-              ].includes(command)
+              command === "admin" ||
+              command === "contact admin"
             ) {
 
               await sendAdmin(
-                sock,
                 jid
               );
 
@@ -1039,7 +814,7 @@ async function startWhatsApp() {
               command === "help"
             ) {
 
-              await sendText(
+              await sendMessage(
                 jid,
 `🤖 *BENSOCIAL BOT*
 
@@ -1051,7 +826,14 @@ Commands:
 • payment
 • admin
 • ping
-• help`
+• help
+
+Admin commands:
+
+• admin services
+• addservice
+• removeservice
+• editservice`
               );
 
               continue;
@@ -1060,17 +842,16 @@ Commands:
 
 
             // =================================================
-            // ADMIN SERVICE SYSTEM
+            // ADMIN SERVICE MENU
             // =================================================
 
             if (
-              command === "admin services" ||
-              command === "serviceadmin"
+              command === "admin services"
             ) {
 
               if (!isAdmin) {
 
-                await sendText(
+                await sendMessage(
                   jid,
                   "❌ Admin access only."
                 );
@@ -1080,8 +861,7 @@ Commands:
               }
 
 
-              await sendAdminServiceHelp(
-                sock,
+              await sendAdminServices(
                 jid
               );
 
@@ -1090,9 +870,9 @@ Commands:
             }
 
 
-            // -------------------------------------------------
+            // =================================================
             // ADD SERVICE
-            // -------------------------------------------------
+            // =================================================
 
             if (
               command.startsWith(
@@ -1102,7 +882,7 @@ Commands:
 
               if (!isAdmin) {
 
-                await sendText(
+                await sendMessage(
                   jid,
                   "❌ Admin access only."
                 );
@@ -1113,7 +893,6 @@ Commands:
 
 
               await addService(
-                sock,
                 jid,
                 text
               );
@@ -1123,9 +902,9 @@ Commands:
             }
 
 
-            // -------------------------------------------------
+            // =================================================
             // REMOVE SERVICE
-            // -------------------------------------------------
+            // =================================================
 
             if (
               command.startsWith(
@@ -1135,7 +914,7 @@ Commands:
 
               if (!isAdmin) {
 
-                await sendText(
+                await sendMessage(
                   jid,
                   "❌ Admin access only."
                 );
@@ -1146,7 +925,6 @@ Commands:
 
 
               await removeService(
-                sock,
                 jid,
                 text
               );
@@ -1156,9 +934,9 @@ Commands:
             }
 
 
-            // -------------------------------------------------
+            // =================================================
             // EDIT SERVICE
-            // -------------------------------------------------
+            // =================================================
 
             if (
               command.startsWith(
@@ -1168,7 +946,7 @@ Commands:
 
               if (!isAdmin) {
 
-                await sendText(
+                await sendMessage(
                   jid,
                   "❌ Admin access only."
                 );
@@ -1179,7 +957,6 @@ Commands:
 
 
               await editService(
-                sock,
                 jid,
                 text
               );
@@ -1189,17 +966,19 @@ Commands:
             }
 
 
-            // -------------------------------------------------
+            // =================================================
             // DEFAULT
-            // -------------------------------------------------
+            // =================================================
 
-            await sendText(
+            await sendMessage(
               jid,
 `👋 *WELCOME TO BENSOCIAL!*
 
 I didn't understand that command.
 
-Send *menu* to see our services.`
+Send *menu* to see our services.
+
+Send *help* to see available commands.`
             );
 
 
@@ -1207,12 +986,11 @@ Send *menu* to see our services.`
 
             console.log("");
             console.log(
-              "❌ MESSAGE HANDLING ERROR"
+              "❌ MESSAGE PROCESSING ERROR"
             );
 
             console.log(
-              error?.message ||
-              error
+              error?.message || error
             );
 
           }
@@ -1226,62 +1004,23 @@ Send *menu* to see our services.`
   } catch (error) {
 
     console.log("");
+    console.log("======================================");
+    console.log("❌ WHATSAPP START ERROR");
+    console.log("======================================");
+
     console.log(
-      "======================================"
+      error?.message || error
     );
 
     console.log(
-      "❌ WHATSAPP START ERROR"
+      error?.stack || ""
     );
 
-    console.log(
-      "======================================"
-    );
+    console.log("");
 
-    console.log(
-      error?.message ||
-      error
-    );
-
-    console.log(
-      error?.stack ||
-      ""
-    );
-
-  }
-
-}
-
-
-// ============================================================
-// SEND TEXT
-// ============================================================
-
-async function sendText(
-  jid,
-  text
-) {
-
-  try {
-
-    await sock.sendMessage(
-      jid,
-      {
-        text
-      }
-    );
-
-    console.log(
-      "📤 REPLY SENT TO:",
-      jid
-    );
-
-  } catch (error) {
-
-    console.log(
-      "❌ SEND ERROR:",
-      error?.message ||
-      error
+    setTimeout(
+      startWhatsApp,
+      10000
     );
 
   }
@@ -1293,10 +1032,7 @@ async function sendText(
 // MENU
 // ============================================================
 
-async function sendMenu(
-  socket,
-  jid
-) {
+async function sendMenu(jid) {
 
   let text =
 `👋 *WELCOME TO BENSOCIAL*
@@ -1312,7 +1048,7 @@ async function sendMenu(
 
     text +=
 `${service.id}. ${service.name}
-💰 ${service.price}
+💰 Price: ${service.price}
 📦 Stock: ${service.stock}
 
 `;
@@ -1330,28 +1066,19 @@ async function sendMenu(
 ℹ️ Send *help* for commands.`;
 
 
-  await socket.sendMessage(
+  await sendMessage(
     jid,
-    {
-      text
-    }
-  );
-
-
-  console.log(
-    "📤 MENU SENT TO:",
-    jid
+    text
   );
 
 }
 
 
 // ============================================================
-// SERVICE
+// SERVICE DETAILS
 // ============================================================
 
 async function sendService(
-  socket,
   jid,
   service
 ) {
@@ -1383,17 +1110,9 @@ After payment, send your receipt/order details to the admin.
 Send *admin* to contact admin.`;
 
 
-  await socket.sendMessage(
+  await sendMessage(
     jid,
-    {
-      text
-    }
-  );
-
-
-  console.log(
-    "📤 SERVICE SENT:",
-    service.name
+    text
   );
 
 }
@@ -1403,15 +1122,10 @@ Send *admin* to contact admin.`;
 // PAYMENT
 // ============================================================
 
-async function sendPayment(
-  socket,
-  jid
-) {
+async function sendPayment(jid) {
 
-  await socket.sendMessage(
+  await sendMessage(
     jid,
-    {
-      text:
 `💳 *BENSOCIAL PAYMENT DETAILS*
 
 🏦 Bank:
@@ -1425,33 +1139,29 @@ ${PAYMENT.accountNumber}
 
 ━━━━━━━━━━━━━━━━━━
 
-After payment, send your receipt and order details to the admin.
+After payment, send your payment receipt and order details to the admin.
 
 Send *admin* to contact admin.`
-    }
   );
 
 }
 
 
 // ============================================================
-// ADMIN
+// ADMIN CONTACT
 // ============================================================
 
-async function sendAdmin(
-  socket,
-  jid
-) {
+async function sendAdmin(jid) {
 
   if (!ADMIN_NUMBER) {
 
-    await sendText(
+    await sendMessage(
       jid,
 `💬 *CONTACT ADMIN*
 
-Admin number is not configured.
+The admin number has not been configured.
 
-Please add ADMIN_NUMBER to Render Environment Variables.`
+Please add ADMIN_NUMBER in Render Environment Variables.`
     );
 
     return;
@@ -1459,29 +1169,26 @@ Please add ADMIN_NUMBER to Render Environment Variables.`
   }
 
 
-  await socket.sendMessage(
+  await sendMessage(
     jid,
-    {
-      text:
 `💬 *CONTACT ADMIN*
 
 👤 ${ADMIN_NAME}
 
 📞 WhatsApp:
 https://wa.me/${ADMIN_NUMBER}`
-    }
   );
 
 
   try {
 
-    await socket.sendMessage(
+    await sock.sendMessage(
       `${ADMIN_NUMBER}@s.whatsapp.net`,
       {
         text:
 `🔔 *NEW CUSTOMER*
 
-A customer wants to contact the admin.
+A customer requested to contact the admin.
 
 Customer:
 ${jid.replace(
@@ -1495,7 +1202,7 @@ ${jid.replace(
 
     console.log(
       "⚠️ Admin notification failed:",
-      error?.message
+      error?.message || error
     );
 
   }
@@ -1507,15 +1214,10 @@ ${jid.replace(
 // ADMIN SERVICE HELP
 // ============================================================
 
-async function sendAdminServiceHelp(
-  socket,
-  jid
-) {
+async function sendAdminServices(jid) {
 
-  await socket.sendMessage(
+  await sendMessage(
     jid,
-    {
-      text:
 `🛠️ *SERVICE MANAGEMENT*
 
 *ADD SERVICE*
@@ -1523,7 +1225,7 @@ async function sendAdminServiceHelp(
 addservice Name | Price | Stock
 
 Example:
-addservice Netflix | ₦5,000 | 20
+addservice Netflix Premium | ₦5,000 | 20
 
 
 *REMOVE SERVICE*
@@ -1544,10 +1246,8 @@ editservice 4 | Netflix Premium | ₦5,500 | 15
 
 *VIEW SERVICES*
 
-menu
-
-Only the configured admin number can use these commands.`
-    }
+Send:
+menu`
   );
 
 }
@@ -1558,7 +1258,6 @@ Only the configured admin number can use these commands.`
 // ============================================================
 
 async function addService(
-  socket,
   jid,
   originalText
 ) {
@@ -1581,12 +1280,15 @@ async function addService(
 
 
   if (
-    parts.length < 3
+    parts.length < 3 ||
+    !parts[0] ||
+    !parts[1] ||
+    !parts[2]
   ) {
 
-    await sendText(
+    await sendMessage(
       jid,
-`❌ Wrong format.
+`❌ *WRONG FORMAT*
 
 Use:
 
@@ -1594,7 +1296,7 @@ addservice Name | Price | Stock
 
 Example:
 
-addservice Netflix | ₦5,000 | 20`
+addservice Netflix Premium | ₦5,000 | 20`
     );
 
     return;
@@ -1602,48 +1304,52 @@ addservice Netflix | ₦5,000 | 20`
   }
 
 
-  const nextId =
-    String(
-      SERVICES.length
-        ? Math.max(
-            ...SERVICES.map(
-              item =>
-                Number(item.id) || 0
-            )
-          ) + 1
-        : 1
-    );
+  const highestId =
+    SERVICES.length
+      ? Math.max(
+          ...SERVICES.map(
+            item =>
+              Number(item.id) || 0
+          )
+        )
+      : 0;
 
 
-  const newService = {
+  const service = {
 
-    id: nextId,
+    id:
+      String(
+        highestId + 1
+      ),
 
-    name: parts[0],
+    name:
+      parts[0],
 
-    price: parts[1],
+    price:
+      parts[1],
 
-    stock: parts[2]
+    stock:
+      parts[2]
 
   };
 
 
   SERVICES.push(
-    newService
+    service
   );
 
 
-  await sendText(
+  await sendMessage(
     jid,
 `✅ *SERVICE ADDED*
 
-ID: ${newService.id}
+ID: ${service.id}
 
-${newService.name}
+${service.name}
 
-💰 ${newService.price}
+💰 ${service.price}
 
-📦 Stock: ${newService.stock}`
+📦 Stock: ${service.stock}`
   );
 
 }
@@ -1654,7 +1360,6 @@ ${newService.name}
 // ============================================================
 
 async function removeService(
-  socket,
   jid,
   originalText
 ) {
@@ -1665,6 +1370,18 @@ async function removeService(
         "removeservice".length
       )
       .trim();
+
+
+  if (!id) {
+
+    await sendMessage(
+      jid,
+      "❌ Enter the service ID."
+    );
+
+    return;
+
+  }
 
 
   const index =
@@ -1678,7 +1395,7 @@ async function removeService(
     index === -1
   ) {
 
-    await sendText(
+    await sendMessage(
       jid,
       `❌ Service ID *${id}* was not found.`
     );
@@ -1698,13 +1415,13 @@ async function removeService(
   );
 
 
-  await sendText(
+  await sendMessage(
     jid,
 `✅ *SERVICE REMOVED*
 
-${removed.name}
+ID: ${removed.id}
 
-ID: ${removed.id}`
+${removed.name}`
   );
 
 }
@@ -1715,7 +1432,6 @@ ID: ${removed.id}`
 // ============================================================
 
 async function editService(
-  socket,
   jid,
   originalText
 ) {
@@ -1741,9 +1457,9 @@ async function editService(
     parts.length < 4
   ) {
 
-    await sendText(
+    await sendMessage(
       jid,
-`❌ Wrong format.
+`❌ *WRONG FORMAT*
 
 Use:
 
@@ -1772,7 +1488,7 @@ editservice 4 | Netflix Premium | ₦5,500 | 15`
 
   if (!service) {
 
-    await sendText(
+    await sendMessage(
       jid,
       `❌ Service ID *${id}* was not found.`
     );
@@ -1792,7 +1508,7 @@ editservice 4 | Netflix Premium | ₦5,500 | 15`
     parts[3];
 
 
-  await sendText(
+  await sendMessage(
     jid,
 `✅ *SERVICE UPDATED*
 
@@ -1809,22 +1525,13 @@ ${service.name}
 
 
 // ============================================================
-// START BOT
+// START
 // ============================================================
 
 console.log("");
-console.log(
-  "======================================"
-);
-
-console.log(
-  "🤖 BENSOCIAL WHATSAPP BOT"
-);
-
-console.log(
-  "======================================"
-);
-
+console.log("======================================");
+console.log("🤖 BENSOCIAL WHATSAPP BOT");
+console.log("======================================");
 console.log("");
 
 console.log(
