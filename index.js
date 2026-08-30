@@ -10,37 +10,41 @@ import pino from "pino";
 import { Boom } from "@hapi/boom";
 import QRCode from "qrcode";
 
+import fs from "fs";
+import path from "path";
+
 
 // ============================================================
-// CONFIGURATION
+// CONFIG
 // ============================================================
 
 const PORT = process.env.PORT || 10000;
 
-const ADMIN_NUMBER = (process.env.ADMIN_NUMBER || "")
-  .replace(/\D/g, "");
+const ADMIN_NUMBER =
+  (process.env.ADMIN_NUMBER || "")
+    .replace(/\D/g, "");
 
 const ADMIN_NAME =
   process.env.ADMIN_NAME || "Bensocial Admin";
 
-const PAIRING_NUMBER = (process.env.PAIRING_NUMBER || "")
-  .replace(/\D/g, "");
+const PAIRING_NUMBER =
+  (process.env.PAIRING_NUMBER || "")
+    .replace(/\D/g, "");
 
 
 // ============================================================
-// EXPRESS SERVER
+// EXPRESS
 // ============================================================
 
 const app = express();
 
 
 // ============================================================
-// WHATSAPP STATUS
+// BOT STATUS
 // ============================================================
 
-let whatsappStatus = "Starting WhatsApp...";
-
-let currentQR = null;
+let whatsappStatus =
+  "⏳ Starting WhatsApp...";
 
 let currentQRCodeImage = null;
 
@@ -48,88 +52,101 @@ let currentPairingCode = null;
 
 let pairingRequested = false;
 
-let sockInstance = null;
+let reconnectTimer = null;
+
+let starting = false;
 
 
 // ============================================================
-// SERVICES
+// SERVICES FILE
 // ============================================================
 
-const SERVICES = [
+const SERVICES_FILE =
+  path.join(
+    process.cwd(),
+    "services.json"
+  );
+
+
+// ============================================================
+// DEFAULT SERVICES
+// ============================================================
+
+const DEFAULT_SERVICES = [
   {
-    id: "1",
+    id: 1,
     name: "📱 WhatsApp Number",
     price: "₦4,500",
     stock: "Available"
   },
   {
-    id: "2",
+    id: 2,
     name: "📲 TextNow",
     price: "₦2,200",
     stock: "Available"
   },
   {
-    id: "3",
+    id: 3,
     name: "🌐 eSIM",
     price: "₦25,000",
     stock: "Available"
   },
   {
-    id: "4",
+    id: 4,
     name: "📘 Facebook",
     price: "₦2,300",
     stock: "Available"
   },
   {
-    id: "5",
+    id: 5,
     name: "🐦 Twitter",
     price: "₦2,860",
     stock: "Available"
   },
   {
-    id: "6",
+    id: 6,
     name: "🇺🇸 USA Facebook",
     price: "₦2,200",
     stock: "35"
   },
   {
-    id: "7",
+    id: 7,
     name: "📹 2026 Video Call Tools",
     price: "₦56,000",
     stock: "7"
   },
   {
-    id: "8",
+    id: 8,
     name: "✅ Telegram Verification",
     price: "₦10,000",
     stock: "9"
   },
   {
-    id: "9",
+    id: 9,
     name: "🍎 Apple iCloud",
     price: "₦7,000",
     stock: "24"
   },
   {
-    id: "10",
+    id: 10,
     name: "🇫🇷 France TikTok",
     price: "₦1,800",
     stock: "6"
   },
   {
-    id: "11",
+    id: 11,
     name: "🔐 HMA VPN — 1 Month",
     price: "₦3,780",
     stock: "62"
   },
   {
-    id: "12",
+    id: 12,
     name: "🔐 ExpressVPN — 1 Month",
     price: "₦3,800",
     stock: "25"
   },
   {
-    id: "13",
+    id: 13,
     name: "📸 USA Instagram",
     price: "₦2,300",
     stock: "23"
@@ -138,13 +155,112 @@ const SERVICES = [
 
 
 // ============================================================
+// LOAD SERVICES
+// ============================================================
+
+function loadServices() {
+
+  try {
+
+    if (
+      fs.existsSync(
+        SERVICES_FILE
+      )
+    ) {
+
+      const data =
+        fs.readFileSync(
+          SERVICES_FILE,
+          "utf8"
+        );
+
+      const services =
+        JSON.parse(data);
+
+      if (
+        Array.isArray(services)
+      ) {
+
+        return services;
+
+      }
+
+    }
+
+  } catch (error) {
+
+    console.log(
+      "⚠️ Could not load services:",
+      error.message
+    );
+
+  }
+
+
+  saveServices(
+    DEFAULT_SERVICES
+  );
+
+  return [
+    ...DEFAULT_SERVICES
+  ];
+}
+
+
+// ============================================================
+// SAVE SERVICES
+// ============================================================
+
+function saveServices(
+  services
+) {
+
+  try {
+
+    fs.writeFileSync(
+      SERVICES_FILE,
+      JSON.stringify(
+        services,
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    return true;
+
+  } catch (error) {
+
+    console.log(
+      "❌ Could not save services:",
+      error.message
+    );
+
+    return false;
+
+  }
+
+}
+
+
+let SERVICES =
+  loadServices();
+
+
+// ============================================================
 // PAYMENT
 // ============================================================
 
 const PAYMENT = {
+
   bank: "OPay",
-  accountName: "TOLUWANI BENJAMIN/Bensocial",
-  accountNumber: "6550518571"
+
+  accountName:
+    "TOLUWANI BENJAMIN/Bensocial",
+
+  accountNumber:
+    "6550518571"
+
 };
 
 
@@ -152,27 +268,35 @@ const PAYMENT = {
 // LOGGER
 // ============================================================
 
-const logger = pino({
-  level: "silent"
-});
+const logger =
+  pino({
+    level: "silent"
+  });
 
 
 // ============================================================
 // WEBSITE
 // ============================================================
 
-app.get("/", async (req, res) => {
+app.get(
+  "/",
+  async (req, res) => {
 
-  let qrHTML = "";
+    let qrHTML = "";
 
-  if (currentQRCodeImage) {
 
-    qrHTML = `
+    if (
+      currentQRCodeImage
+    ) {
+
+      qrHTML = `
+
       <div style="
         margin:30px auto;
         padding:20px;
         background:white;
         width:max-content;
+        max-width:90%;
         border-radius:15px;
       ">
 
@@ -188,52 +312,65 @@ app.get("/", async (req, res) => {
 
       </div>
 
-      <p style="font-size:18px;">
-        📱 Open WhatsApp → Linked Devices → Link a Device
+      <p>
+        📱 Open WhatsApp →
+        Linked Devices →
+        Link a Device
       </p>
 
-      <p style="font-size:18px;">
+      <p>
         Scan the QR code above.
       </p>
-    `;
 
-  } else {
+      `;
 
-    qrHTML = `
+    } else {
+
+      qrHTML = `
+
       <div style="
         margin:30px auto;
-        padding:25px;
+        padding:20px;
+        max-width:500px;
         background:#1c1c1c;
         border-radius:15px;
-        max-width:500px;
       ">
 
-        <h3>📱 QR CODE</h3>
+        <h3>
+          📱 QR CODE
+        </h3>
 
         <p>
-          QR code is not available right now.
+          Waiting for QR code...
         </p>
 
       </div>
-    `;
 
-  }
+      `;
+
+    }
 
 
-  let pairingHTML = "";
+    let pairingHTML = "";
 
-  if (currentPairingCode) {
 
-    pairingHTML = `
+    if (
+      currentPairingCode
+    ) {
+
+      pairingHTML = `
+
       <div style="
         margin:30px auto;
         padding:25px;
+        max-width:500px;
         background:#1c1c1c;
         border-radius:15px;
-        max-width:500px;
       ">
 
-        <h2>🔐 WhatsApp Pairing Code</h2>
+        <h2>
+          🔐 WhatsApp Pairing Code
+        </h2>
 
         <div style="
           font-size:32px;
@@ -244,105 +381,81 @@ app.get("/", async (req, res) => {
           border-radius:10px;
           margin:20px 0;
         ">
+
           ${currentPairingCode}
+
         </div>
 
         <p>
-          On your phone:
+          WhatsApp → Settings →
+          Linked Devices →
+          Link a Device
         </p>
 
         <p>
-          WhatsApp → Settings → Linked Devices
-        </p>
-
-        <p>
-          → Link a Device
-        </p>
-
-        <p>
-          → Link with phone number instead
-        </p>
-
-        <p>
-          Enter the code above.
+          Choose
+          <strong>
+            Link with phone number instead
+          </strong>
         </p>
 
       </div>
-    `;
 
-  } else {
+      `;
 
-    pairingHTML = `
-      <div style="
-        margin:30px auto;
-        padding:20px;
-        background:#1c1c1c;
-        border-radius:15px;
-        max-width:500px;
-      ">
-
-        <h3>🔐 Pairing Code</h3>
-
-        <p>
-          ${PAIRING_NUMBER
-            ? "Waiting for WhatsApp pairing code..."
-            : "PAIRING_NUMBER is not configured."
-          }
-        </p>
-
-      </div>
-    `;
-
-  }
+    }
 
 
-  res.send(`
+    res.send(`
+
 <!DOCTYPE html>
 
 <html>
 
 <head>
 
-  <title>Bensocial WhatsApp Bot</title>
+<title>
+Bensocial WhatsApp Bot
+</title>
 
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1"
-  >
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1"
+>
 
-  <meta
-    http-equiv="refresh"
-    content="10"
-  >
+<meta
+  http-equiv="refresh"
+  content="10"
+>
 
 </head>
 
 
 <body style="
-  background:#111;
-  color:white;
-  font-family:Arial,sans-serif;
-  text-align:center;
-  padding:30px 15px;
+background:#111;
+color:white;
+font-family:Arial;
+text-align:center;
+padding:30px 15px;
 ">
 
 
-<h1 style="font-size:38px;">
-  🤖 Bensocial WhatsApp Bot
+<h1>
+🤖 Bensocial WhatsApp Bot
 </h1>
 
 
 <div style="
-  margin:25px auto;
-  padding:20px;
-  max-width:500px;
-  background:#191919;
-  border-radius:15px;
+background:#191919;
+padding:20px;
+border-radius:15px;
+max-width:500px;
+margin:25px auto;
 ">
 
-  <h2>
-    ${whatsappStatus}
-  </h2>
+<h2>
+${whatsappStatus}
+</h2>
 
 </div>
 
@@ -353,140 +466,193 @@ ${pairingHTML}
 ${qrHTML}
 
 
-<div style="
-  margin:30px auto;
-  max-width:500px;
-  padding:20px;
-  background:#191919;
-  border-radius:15px;
+<p style="
+color:#888;
+margin-top:40px;
 ">
 
-  <p>
-    🌐 Bot server is running.
-  </p>
+Bensocial WhatsApp Bot
 
-  <p>
-    This page automatically refreshes every 10 seconds.
-  </p>
-
-</div>
+</p>
 
 
 </body>
 
 </html>
+
 `);
 
-});
+  }
+);
 
 
 // ============================================================
-// HEALTH CHECK
+// HEALTH
 // ============================================================
 
-app.get("/health", (req, res) => {
+app.get(
+  "/health",
+  (req, res) => {
 
-  res.json({
-    status: "ok",
-    whatsapp: whatsappStatus
-  });
+    res.json({
 
-});
+      status: "ok",
+
+      whatsapp:
+        whatsappStatus,
+
+      services:
+        SERVICES.length
+
+    });
+
+  }
+);
 
 
 // ============================================================
-// START WEB SERVER
+// SERVER
 // ============================================================
 
-app.listen(PORT, () => {
+app.listen(
+  PORT,
+  () => {
 
-  console.log("");
-  console.log("======================================");
-  console.log("🌐 BENSOCIAL WEB SERVER");
-  console.log("======================================");
+    console.log("");
 
-  console.log(
-    `🌐 Port: ${PORT}`
+    console.log(
+      "======================================"
+    );
+
+    console.log(
+      "🌐 BENSOCIAL WEB SERVER"
+    );
+
+    console.log(
+      "======================================"
+    );
+
+    console.log(
+      `🌐 Port: ${PORT}`
+    );
+
+    console.log("");
+
+  }
+);
+
+
+// ============================================================
+// ADMIN CHECK
+// ============================================================
+
+function isAdmin(
+  jid
+) {
+
+  if (
+    !ADMIN_NUMBER
+  ) {
+
+    return false;
+
+  }
+
+
+  const sender =
+    jid
+      .split("@")[0]
+      .replace(/\D/g, "");
+
+
+  return (
+    sender ===
+    ADMIN_NUMBER
   );
 
-  console.log(
-    "======================================"
-  );
-
-});
+}
 
 
 // ============================================================
 // WHATSAPP
 // ============================================================
 
-let reconnectTimer = null;
-
-let starting = false;
-
-
 async function startWhatsApp() {
 
-  if (starting) {
+  if (
+    starting
+  ) {
+
     return;
+
   }
 
+
   starting = true;
+
 
   try {
 
     console.log("");
-    console.log("======================================");
-    console.log("🤖 STARTING BENSOCIAL WHATSAPP BOT");
-    console.log("======================================");
 
-    whatsappStatus = "⏳ Starting WhatsApp...";
+    console.log(
+      "======================================"
+    );
 
-    currentQR = null;
+    console.log(
+      "🤖 STARTING BENSOCIAL WHATSAPP BOT"
+    );
 
-    currentQRCodeImage = null;
-
-    currentPairingCode = null;
-
-    pairingRequested = false;
+    console.log(
+      "======================================"
+    );
 
 
-    // ========================================================
-    // AUTH STATE
-    // ========================================================
+    whatsappStatus =
+      "🔄 Connecting to WhatsApp...";
+
+
+    currentQRCodeImage =
+      null;
+
+    currentPairingCode =
+      null;
+
+    pairingRequested =
+      false;
+
 
     const {
       state,
       saveCreds
-    } = await useMultiFileAuthState(
-      "./auth_info_baileys"
-    );
+    } =
+      await useMultiFileAuthState(
+        "./auth_info_baileys"
+      );
 
 
-    // ========================================================
-    // CREATE SOCKET
-    // ========================================================
+    const sock =
+      makeWASocket({
 
-    const sock = makeWASocket({
+        auth: state,
 
-      auth: state,
+        logger,
 
-      logger,
+        browser:
+          Browsers.ubuntu(
+            "Bensocial Bot"
+          ),
 
-      browser: Browsers.ubuntu(
-        "Bensocial Bot"
-      ),
+        markOnlineOnConnect:
+          false,
 
-      markOnlineOnConnect: false,
+        syncFullHistory:
+          false,
 
-      syncFullHistory: false,
+        generateHighQualityLinkPreview:
+          false
 
-      generateHighQualityLinkPreview: false
-
-    });
-
-
-    sockInstance = sock;
+      });
 
 
     // ========================================================
@@ -500,7 +666,7 @@ async function startWhatsApp() {
 
 
     // ========================================================
-    // CONNECTION UPDATE
+    // CONNECTION
     // ========================================================
 
     sock.ev.on(
@@ -515,22 +681,26 @@ async function startWhatsApp() {
 
 
         // ====================================================
-        // QR CODE
+        // QR
         // ====================================================
 
-        if (qr) {
+        if (
+          qr
+        ) {
 
           console.log("");
-          console.log("======================================");
-          console.log("📱 WHATSAPP QR CODE GENERATED");
-          console.log("======================================");
+
+          console.log(
+            "📱 WHATSAPP QR CODE GENERATED"
+          );
+
 
           whatsappStatus =
-            "📱 WhatsApp QR code is ready";
+            "📱 Scan the WhatsApp QR code";
 
-          currentQR = qr;
 
-          currentPairingCode = null;
+          currentPairingCode =
+            null;
 
 
           try {
@@ -544,25 +714,26 @@ async function startWhatsApp() {
                 }
               );
 
+
             console.log(
-              "✅ QR code converted to web image."
+              "✅ QR code ready."
             );
 
-          } catch (error) {
+            console.log(
+              "🌐 Open the Render URL to scan it."
+            );
+
+
+          } catch (
+            error
+          ) {
 
             console.log(
-              "❌ QR image error:",
-              error?.message
+              "❌ QR conversion error:",
+              error.message
             );
 
           }
-
-
-          console.log(
-            "Open the Render URL to see the QR."
-          );
-
-          console.log("");
 
         }
 
@@ -572,63 +743,69 @@ async function startWhatsApp() {
         // ====================================================
 
         if (
-          connection === "connecting"
+          connection ===
+          "connecting"
         ) {
 
           whatsappStatus =
             "🔄 Connecting to WhatsApp...";
 
-          console.log(
-            "🔄 Connecting to WhatsApp..."
-          );
-
         }
 
 
         // ====================================================
-        // CONNECTED
+        // OPEN
         // ====================================================
 
         if (
-          connection === "open"
+          connection ===
+          "open"
         ) {
 
-          starting = false;
+          starting =
+            false;
+
 
           whatsappStatus =
             "✅ WhatsApp Bot Connected";
 
-          currentQR = null;
 
-          currentQRCodeImage = null;
+          currentQRCodeImage =
+            null;
 
-          currentPairingCode = null;
+          currentPairingCode =
+            null;
 
-          pairingRequested = true;
 
           console.log("");
-          console.log("======================================");
-          console.log("✅ WHATSAPP BOT CONNECTED");
-          console.log("======================================");
 
           console.log(
-            "🤖 Bensocial is now online."
+            "======================================"
           );
 
-          console.log("");
+          console.log(
+            "✅ WHATSAPP BOT CONNECTED"
+          );
+
+          console.log(
+            "======================================"
+          );
 
         }
 
 
         // ====================================================
-        // CONNECTION CLOSED
+        // CLOSE
         // ====================================================
 
         if (
-          connection === "close"
+          connection ===
+          "close"
         ) {
 
-          starting = false;
+          starting =
+            false;
+
 
           const statusCode =
             new Boom(
@@ -637,9 +814,19 @@ async function startWhatsApp() {
 
 
           console.log("");
-          console.log("======================================");
-          console.log("❌ WHATSAPP CONNECTION CLOSED");
-          console.log("======================================");
+
+          console.log(
+            "======================================"
+          );
+
+          console.log(
+            "❌ WHATSAPP CONNECTION CLOSED"
+          );
+
+          console.log(
+            "======================================"
+          );
+
 
           console.log(
             "Status code:",
@@ -664,24 +851,24 @@ async function startWhatsApp() {
           ) {
 
             whatsappStatus =
-              "⚠️ WhatsApp logged out — new pairing required";
+              "⚠️ WhatsApp logged out";
 
-            currentQR = null;
 
-            currentQRCodeImage = null;
+            currentQRCodeImage =
+              null;
 
-            currentPairingCode = null;
+            currentPairingCode =
+              null;
 
-            console.log("");
+
             console.log(
-              "⚠️ WhatsApp session was logged out."
+              "⚠️ Session logged out."
             );
 
             console.log(
-              "Delete auth_info_baileys and create a new session."
+              "A new pairing is required."
             );
 
-            console.log("");
 
             return;
 
@@ -689,20 +876,23 @@ async function startWhatsApp() {
 
 
           // ==================================================
-          // OTHER DISCONNECT
+          // RECONNECT
           // ==================================================
 
           whatsappStatus =
-            "🔄 WhatsApp disconnected — reconnecting...";
+            "🔄 Disconnected — reconnecting...";
 
 
-          if (!reconnectTimer) {
+          if (
+            !reconnectTimer
+          ) {
 
             reconnectTimer =
               setTimeout(
                 () => {
 
-                  reconnectTimer = null;
+                  reconnectTimer =
+                    null;
 
                   startWhatsApp();
 
@@ -727,48 +917,41 @@ async function startWhatsApp() {
       PAIRING_NUMBER
     ) {
 
-      console.log("");
-      console.log("======================================");
-      console.log("🔐 WHATSAPP PAIRING");
-      console.log("======================================");
-
-      console.log(
-        "📞 Number:",
-        PAIRING_NUMBER
-      );
-
-
-      /*
-       * Wait for the WhatsApp socket to become usable.
-       * The request is made only once.
-       */
-
       setTimeout(
         async () => {
 
-          if (pairingRequested) {
+          if (
+            pairingRequested
+          ) {
+
             return;
+
           }
 
 
           if (
             state.creds.registered
           ) {
+
             return;
+
           }
 
 
           try {
 
-            pairingRequested = true;
+            pairingRequested =
+              true;
+
 
             whatsappStatus =
-              "🔐 Generating WhatsApp pairing code...";
+              "🔐 Generating pairing code...";
 
 
             console.log("");
+
             console.log(
-              "🔐 Requesting WhatsApp pairing code..."
+              "🔐 Requesting pairing code..."
             );
 
 
@@ -778,20 +961,31 @@ async function startWhatsApp() {
               );
 
 
-            currentPairingCode = code;
+            currentPairingCode =
+              code;
 
-            currentQR = null;
 
-            currentQRCodeImage = null;
+            currentQRCodeImage =
+              null;
+
 
             whatsappStatus =
-              "🔐 WhatsApp pairing code is ready";
+              "🔐 Pairing code is ready";
 
 
             console.log("");
-            console.log("======================================");
-            console.log("🔐 WHATSAPP PAIRING CODE");
-            console.log("======================================");
+
+            console.log(
+              "======================================"
+            );
+
+            console.log(
+              "🔐 WHATSAPP PAIRING CODE"
+            );
+
+            console.log(
+              "======================================"
+            );
 
             console.log("");
 
@@ -801,58 +995,32 @@ async function startWhatsApp() {
 
             console.log("");
 
-            console.log(
-              "Open the Render website to see the code."
-            );
+          } catch (
+            error
+          ) {
 
-            console.log("");
+            pairingRequested =
+              false;
 
-            console.log(
-              "WhatsApp → Settings → Linked Devices"
-            );
-
-            console.log(
-              "→ Link a Device → Link with phone number instead"
-            );
-
-            console.log("");
-
-          } catch (error) {
-
-            pairingRequested = false;
 
             whatsappStatus =
-              "❌ Pairing code error — check Render logs";
+              "❌ Pairing code error";
 
 
             console.log("");
-            console.log("======================================");
-            console.log("❌ PAIRING CODE ERROR");
-            console.log("======================================");
 
             console.log(
-              "Message:",
+              "❌ PAIRING CODE ERROR"
+            );
+
+            console.log(
               error?.message
             );
-
-            console.log(
-              "Name:",
-              error?.name
-            );
-
-            console.log(
-              "======================================");
 
           }
 
         },
         5000
-      );
-
-    } else {
-
-      console.log(
-        "ℹ️ No pairing number configured."
       );
 
     }
@@ -875,14 +1043,18 @@ async function startWhatsApp() {
             if (
               !message.message
             ) {
+
               continue;
+
             }
 
 
             if (
               message.key.fromMe
             ) {
+
               continue;
+
             }
 
 
@@ -890,8 +1062,12 @@ async function startWhatsApp() {
               message.key.remoteJid;
 
 
-            if (!jid) {
+            if (
+              !jid
+            ) {
+
               continue;
+
             }
 
 
@@ -904,25 +1080,177 @@ async function startWhatsApp() {
 
             const command =
               text
-                .trim()
-                .toLowerCase();
+                .trim();
 
 
-            if (!command) {
+            const lowerCommand =
+              command.toLowerCase();
+
+
+            if (
+              !command
+            ) {
+
               continue;
+
             }
 
 
             // =================================================
-            // MENU
+            // ADMIN COMMANDS
             // =================================================
 
             if (
-              command === "hi" ||
-              command === "hello" ||
-              command === "hey" ||
-              command === "menu" ||
-              command === "start"
+              isAdmin(jid)
+            ) {
+
+              // ------------------------------------------------
+              // ADMIN HELP
+              // ------------------------------------------------
+
+              if (
+                lowerCommand ===
+                "adminhelp"
+              ) {
+
+                await sendAdminHelp(
+                  sock,
+                  jid
+                );
+
+                continue;
+
+              }
+
+
+              // ------------------------------------------------
+              // LIST SERVICES
+              // ------------------------------------------------
+
+              if (
+                lowerCommand ===
+                "services"
+              ) {
+
+                await sendServicesList(
+                  sock,
+                  jid
+                );
+
+                continue;
+
+              }
+
+
+              // ------------------------------------------------
+              // ADD SERVICE
+              // ------------------------------------------------
+
+              if (
+                lowerCommand ===
+                "addservice"
+              ) {
+
+                await sendAddServiceHelp(
+                  sock,
+                  jid
+                );
+
+                continue;
+
+              }
+
+
+              // ------------------------------------------------
+              // REMOVE SERVICE
+              // ------------------------------------------------
+
+              if (
+                lowerCommand.startsWith(
+                  "removeservice "
+                )
+              ) {
+
+                const parts =
+                  command.split(/\s+/);
+
+                const id =
+                  Number(parts[1]);
+
+
+                await removeService(
+                  sock,
+                  jid,
+                  id
+                );
+
+                continue;
+
+              }
+
+
+              // ------------------------------------------------
+              // EDIT SERVICE
+              // ------------------------------------------------
+
+              if (
+                lowerCommand.startsWith(
+                  "editservice "
+                )
+              ) {
+
+                const parts =
+                  command.split(/\s+/);
+
+                const id =
+                  Number(parts[1]);
+
+
+                await editService(
+                  sock,
+                  jid,
+                  id,
+                  parts
+                );
+
+                continue;
+
+              }
+
+
+              // ------------------------------------------------
+              // ADD SERVICE DIRECTLY
+              // ------------------------------------------------
+
+              if (
+                lowerCommand.startsWith(
+                  "add "
+                )
+              ) {
+
+                await addServiceFromCommand(
+                  sock,
+                  jid,
+                  command
+                );
+
+                continue;
+
+              }
+
+            }
+
+
+            // =================================================
+            // NORMAL MENU
+            // =================================================
+
+            if (
+              lowerCommand === "hi" ||
+              lowerCommand === "hello" ||
+              lowerCommand === "hey" ||
+              lowerCommand === "menu" ||
+              lowerCommand === "start"
             ) {
 
               await sendMenu(
@@ -931,21 +1259,25 @@ async function startWhatsApp() {
               );
 
               continue;
+
             }
 
 
             // =================================================
-            // SERVICES
+            // SERVICE
             // =================================================
 
             const service =
               SERVICES.find(
                 item =>
-                  item.id === command
+                  String(item.id) ===
+                  lowerCommand
               );
 
 
-            if (service) {
+            if (
+              service
+            ) {
 
               await sendService(
                 sock,
@@ -954,6 +1286,7 @@ async function startWhatsApp() {
               );
 
               continue;
+
             }
 
 
@@ -962,8 +1295,8 @@ async function startWhatsApp() {
             // =================================================
 
             if (
-              command === "admin" ||
-              command === "contact admin"
+              lowerCommand === "admin" ||
+              lowerCommand === "contact admin"
             ) {
 
               await sendAdmin(
@@ -972,6 +1305,7 @@ async function startWhatsApp() {
               );
 
               continue;
+
             }
 
 
@@ -980,8 +1314,8 @@ async function startWhatsApp() {
             // =================================================
 
             if (
-              command === "payment" ||
-              command === "pay"
+              lowerCommand === "payment" ||
+              lowerCommand === "pay"
             ) {
 
               await sock.sendMessage(
@@ -1004,6 +1338,7 @@ After payment, contact the admin with your payment receipt/order details.`
               );
 
               continue;
+
             }
 
 
@@ -1012,7 +1347,7 @@ After payment, contact the admin with your payment receipt/order details.`
             // =================================================
 
             if (
-              command === "help"
+              lowerCommand === "help"
             ) {
 
               await sock.sendMessage(
@@ -1026,7 +1361,7 @@ Send *menu* to view our services.
 Commands:
 
 • menu
-• 1 - 13
+• 1 - ${SERVICES.length}
 • payment
 • admin
 • help`
@@ -1034,6 +1369,7 @@ Commands:
               );
 
               continue;
+
             }
 
 
@@ -1052,10 +1388,12 @@ Send *menu* to view our available services.`
             );
 
 
-          } catch (error) {
+          } catch (
+            error
+          ) {
 
             console.log(
-              "❌ Message handling error:",
+              "❌ Message error:",
               error?.message
             );
 
@@ -1067,18 +1405,23 @@ Send *menu* to view our available services.`
     );
 
 
-  } catch (error) {
+  } catch (
+    error
+  ) {
 
-    starting = false;
+    starting =
+      false;
+
 
     whatsappStatus =
       "❌ WhatsApp startup error";
 
 
     console.log("");
-    console.log("======================================");
-    console.log("❌ WHATSAPP START ERROR");
-    console.log("======================================");
+
+    console.log(
+      "❌ WHATSAPP START ERROR"
+    );
 
     console.log(
       error?.message
@@ -1088,15 +1431,13 @@ Send *menu* to view our available services.`
       error?.stack
     );
 
-    console.log("");
-
   }
 
 }
 
 
 // ============================================================
-// MENU
+// SEND MENU
 // ============================================================
 
 async function sendMenu(
@@ -1143,7 +1484,7 @@ async function sendMenu(
 
 
 // ============================================================
-// SERVICE
+// SEND SERVICE
 // ============================================================
 
 async function sendService(
@@ -1190,7 +1531,7 @@ Send *admin* to contact the admin.`;
 
 
 // ============================================================
-// ADMIN
+// ADMIN CONTACT
 // ============================================================
 
 async function sendAdmin(
@@ -1198,7 +1539,9 @@ async function sendAdmin(
   jid
 ) {
 
-  if (!ADMIN_NUMBER) {
+  if (
+    !ADMIN_NUMBER
+  ) {
 
     await sock.sendMessage(
       jid,
@@ -1206,18 +1549,13 @@ async function sendAdmin(
         text:
 `💬 *CONTACT ADMIN*
 
-Admin number has not been configured.
-
-Please configure ADMIN_NUMBER in Render Environment Variables.`
+Admin number has not been configured.`
       }
     );
 
     return;
+
   }
-
-
-  const adminJid =
-    `${ADMIN_NUMBER}@s.whatsapp.net`;
 
 
   await sock.sendMessage(
@@ -1237,7 +1575,7 @@ https://wa.me/${ADMIN_NUMBER}`
   try {
 
     await sock.sendMessage(
-      adminJid,
+      `${ADMIN_NUMBER}@s.whatsapp.net`,
       {
         text:
 `🔔 *NEW CUSTOMER*
@@ -1252,10 +1590,12 @@ ${jid.replace(
       }
     );
 
-  } catch (error) {
+  } catch (
+    error
+  ) {
 
     console.log(
-      "⚠️ Could not notify admin:",
+      "⚠️ Admin notification failed:",
       error?.message
     );
 
@@ -1265,13 +1605,627 @@ ${jid.replace(
 
 
 // ============================================================
-// START BOT
+// ADMIN HELP
+// ============================================================
+
+async function sendAdminHelp(
+  sock,
+  jid
+) {
+
+  await sock.sendMessage(
+    jid,
+    {
+      text:
+`👑 *BENSOCIAL ADMIN PANEL*
+
+*SERVICE MANAGEMENT*
+
+📋 services
+View all services.
+
+➕ addservice
+Show instructions for adding.
+
+➕ add Name | Price | Stock
+Add a service directly.
+
+✏️ editservice ID Name | Price | Stock
+Edit a service.
+
+🗑️ removeservice ID
+Remove a service.
+
+Example:
+
+add 📱 UK WhatsApp | ₦5,000 | 10
+
+editservice 1 📱 UK WhatsApp | ₦5,500 | 15
+
+removeservice 1
+
+Only the configured ADMIN_NUMBER can use these commands.`
+    }
+  );
+
+}
+
+
+// ============================================================
+// SERVICES LIST
+// ============================================================
+
+async function sendServicesList(
+  sock,
+  jid
+) {
+
+  if (
+    SERVICES.length === 0
+  ) {
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+`📦 *SERVICES*
+
+No services are currently available.`
+      }
+    );
+
+    return;
+
+  }
+
+
+  let text =
+`📦 *BENSOCIAL SERVICES*
+
+`;
+
+
+  for (
+    const service of SERVICES
+  ) {
+
+    text +=
+`${service.id}. ${service.name}
+💰 ${service.price}
+📦 Stock: ${service.stock}
+
+`;
+
+  }
+
+
+  await sock.sendMessage(
+    jid,
+    {
+      text
+    }
+  );
+
+}
+
+
+// ============================================================
+// ADD SERVICE HELP
+// ============================================================
+
+async function sendAddServiceHelp(
+  sock,
+  jid
+) {
+
+  await sock.sendMessage(
+    jid,
+    {
+      text:
+`➕ *ADD SERVICE*
+
+Use this format:
+
+add Name | Price | Stock
+
+Example:
+
+add 🇬🇧 UK WhatsApp Number | ₦5,000 | 10
+
+The service will automatically receive the next available ID.
+
+Send *services* to see the updated list.`
+    }
+  );
+
+}
+
+
+// ============================================================
+// ADD SERVICE
+// ============================================================
+
+async function addServiceFromCommand(
+  sock,
+  jid,
+  command
+) {
+
+  const raw =
+    command.substring(4).trim();
+
+
+  const parts =
+    raw.split("|")
+      .map(
+        item =>
+          item.trim()
+      );
+
+
+  if (
+    parts.length !== 3
+  ) {
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+`❌ Wrong format.
+
+Use:
+
+add Name | Price | Stock
+
+Example:
+
+add 🇬🇧 UK WhatsApp Number | ₦5,000 | 10`
+      }
+    );
+
+    return;
+
+  }
+
+
+  const [
+    name,
+    price,
+    stock
+  ] = parts;
+
+
+  if (
+    !name ||
+    !price ||
+    !stock
+  ) {
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+`❌ All three fields are required.
+
+Name | Price | Stock`
+      }
+    );
+
+    return;
+
+  }
+
+
+  const nextId =
+    SERVICES.length > 0
+      ? Math.max(
+          ...SERVICES.map(
+            service =>
+              Number(service.id)
+          )
+        ) + 1
+      : 1;
+
+
+  const newService = {
+
+    id: nextId,
+
+    name,
+
+    price,
+
+    stock
+
+  };
+
+
+  SERVICES.push(
+    newService
+  );
+
+
+  const saved =
+    saveServices(
+      SERVICES
+    );
+
+
+  if (!saved) {
+
+    SERVICES.pop();
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+`❌ Service could not be saved.`
+      }
+    );
+
+    return;
+
+  }
+
+
+  await sock.sendMessage(
+    jid,
+    {
+      text:
+`✅ *SERVICE ADDED*
+
+ID: ${newService.id}
+
+${newService.name}
+
+💰 Price:
+${newService.price}
+
+📦 Stock:
+${newService.stock}
+
+The customer menu has been updated.`
+    }
+  );
+
+}
+
+
+// ============================================================
+// REMOVE SERVICE
+// ============================================================
+
+async function removeService(
+  sock,
+  jid,
+  id
+) {
+
+  if (
+    !Number.isInteger(id)
+  ) {
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+`❌ Enter a valid service ID.
+
+Example:
+
+removeservice 5`
+      }
+    );
+
+    return;
+
+  }
+
+
+  const index =
+    SERVICES.findIndex(
+      service =>
+        Number(service.id) === id
+    );
+
+
+  if (
+    index === -1
+  ) {
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+`❌ Service ${id} was not found.
+
+Send *services* to see the current list.`
+      }
+    );
+
+    return;
+
+  }
+
+
+  const removed =
+    SERVICES[index];
+
+
+  SERVICES.splice(
+    index,
+    1
+  );
+
+
+  const saved =
+    saveServices(
+      SERVICES
+    );
+
+
+  if (!saved) {
+
+    SERVICES.splice(
+      index,
+      0,
+      removed
+    );
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+`❌ Could not save the change.`
+      }
+    );
+
+    return;
+
+  }
+
+
+  await sock.sendMessage(
+    jid,
+    {
+      text:
+`✅ *SERVICE REMOVED*
+
+ID: ${removed.id}
+
+${removed.name}
+
+💰 ${removed.price}
+
+📦 ${removed.stock}`
+    }
+  );
+
+}
+
+
+// ============================================================
+// EDIT SERVICE
+// ============================================================
+
+async function editService(
+  sock,
+  jid,
+  id,
+  parts
+) {
+
+  if (
+    !Number.isInteger(id)
+  ) {
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+`❌ Invalid service ID.
+
+Example:
+
+editservice 3 🌐 eSIM | ₦20,000 | 15`
+      }
+    );
+
+    return;
+
+  }
+
+
+  const index =
+    SERVICES.findIndex(
+      service =>
+        Number(service.id) === id
+    );
+
+
+  if (
+    index === -1
+  ) {
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+`❌ Service ${id} was not found.
+
+Send *services* to see the list.`
+      }
+    );
+
+    return;
+
+  }
+
+
+  const firstSpace =
+    parts[1]
+      ? parts[1]
+      : "";
+
+
+  /*
+   * Reconstruct everything after
+   * the service ID.
+   */
+
+  const raw =
+    parts
+      .slice(2)
+      .join(" ")
+      .trim();
+
+
+  const fields =
+    raw
+      .split("|")
+      .map(
+        item =>
+          item.trim()
+      );
+
+
+  if (
+    fields.length !== 3
+  ) {
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+`❌ Wrong format.
+
+Use:
+
+editservice ID Name | Price | Stock
+
+Example:
+
+editservice 3 🌐 eSIM | ₦20,000 | 15`
+      }
+    );
+
+    return;
+
+  }
+
+
+  const [
+    name,
+    price,
+    stock
+  ] = fields;
+
+
+  if (
+    !name ||
+    !price ||
+    !stock
+  ) {
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+`❌ Name, price and stock are required.`
+      }
+    );
+
+    return;
+
+  }
+
+
+  const oldService =
+    {
+      ...SERVICES[index]
+    };
+
+
+  SERVICES[index] = {
+
+    id,
+
+    name,
+
+    price,
+
+    stock
+
+  };
+
+
+  const saved =
+    saveServices(
+      SERVICES
+    );
+
+
+  if (!saved) {
+
+    SERVICES[index] =
+      oldService;
+
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+`❌ Could not save the service changes.`
+      }
+    );
+
+    return;
+
+  }
+
+
+  await sock.sendMessage(
+    jid,
+    {
+      text:
+`✅ *SERVICE UPDATED*
+
+ID: ${id}
+
+${name}
+
+💰 Price:
+${price}
+
+📦 Stock:
+${stock}
+
+The customer menu has been updated.`
+    }
+  );
+
+}
+
+
+// ============================================================
+// START
 // ============================================================
 
 console.log("");
-console.log("======================================");
-console.log("🤖 BENSOCIAL WHATSAPP BOT");
-console.log("======================================");
+
+console.log(
+  "======================================"
+);
+
+console.log(
+  "🤖 BENSOCIAL WHATSAPP BOT"
+);
+
+console.log(
+  "======================================"
+);
+
+console.log("");
 
 console.log(
   "PAIRING_NUMBER:",
@@ -1281,6 +2235,11 @@ console.log(
 console.log(
   "ADMIN_NUMBER:",
   ADMIN_NUMBER || "NOT SET"
+);
+
+console.log(
+  "SERVICES:",
+  SERVICES.length
 );
 
 console.log("");
